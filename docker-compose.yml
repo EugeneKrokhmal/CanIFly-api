@@ -1,0 +1,21 @@
+services:
+  postgis:
+    image: postgis/postgis:16-3.4
+    container_name: canifly-postgis
+    environment:
+      POSTGRES_USER: canifly
+      POSTGRES_PASSWORD: canifly
+      POSTGRES_DB: canifly
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgis_data:/var/lib/postgresql/data
+      - ./docker/init-postgis.sql:/docker-entrypoint-initdb.d/01-init-postgis.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U canifly -d canifly"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgis_data:
