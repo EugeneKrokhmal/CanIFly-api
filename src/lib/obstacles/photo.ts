@@ -1,36 +1,64 @@
 import { randomUUID } from "crypto";
 import { mkdir, unlink, writeFile } from "fs/promises";
 import path from "path";
+import sharp from "sharp";
 
-const MAX_BYTES = 5 * 1024 * 1024;
+/** Accept larger phone originals; we recompress before writing. */
+const MAX_BYTES = 12 * 1024 * 1024;
 const ALLOWED = new Set(["image/jpeg", "image/png", "image/webp"]);
-const EXT: Record<string, string> = {
-  "image/jpeg": "jpg",
-  "image/png": "png",
-  "image/webp": "webp",
-};
+
+const MAX_EDGE = {
+  obstacles: 1600,
+  avatars: 512,
+} as const;
+
+const JPEG_QUALITY = {
+  obstacles: 82,
+  avatars: 85,
+} as const;
+
+type DirName = "obstacles" | "avatars";
 
 async function saveUnder(
-  dirName: "obstacles" | "avatars",
+  dirName: DirName,
   file: File,
 ): Promise<{ url: string } | { error: string }> {
   if (!ALLOWED.has(file.type)) {
     return { error: "Photo must be JPEG, PNG, or WebP" };
   }
   if (file.size <= 0 || file.size > MAX_BYTES) {
-    return { error: "Photo must be under 5 MB" };
+    return { error: "Photo must be under 12 MB" };
   }
 
   const uploadDir = path.join(process.cwd(), "uploads", dirName);
   await mkdir(uploadDir, { recursive: true });
-  const ext = EXT[file.type] ?? "jpg";
-  const filename = `${randomUUID()}.${ext}`;
-  await writeFile(path.join(uploadDir, filename), Buffer.from(await file.arrayBuffer()));
+  const filename = `${randomUUID()}.jpg`;
+  const abs = path.join(uploadDir, filename);
+  const input = Buffer.from(await file.arrayBuffer());
+  const edge = MAX_EDGE[dirName];
+  const quality = JPEG_QUALITY[dirName];
+
+  try {
+    const out = await sharp(input, { failOn: "none" })
+      .rotate()
+      .resize({
+        width: edge,
+        height: edge,
+        fit: "inside",
+        withoutEnlargement: true,
+      })
+      .jpeg({ quality, mozjpeg: true })
+      .toBuffer();
+    await writeFile(abs, out);
+  } catch {
+    return { error: "Could not process image" };
+  }
+
   return { url: `/uploads/${dirName}/${filename}` };
 }
 
 async function deleteUnder(
-  dirName: "obstacles" | "avatars",
+  dirName: DirName,
   photoUrl: string | null | undefined,
 ) {
   const prefix = `/uploads/${dirName}/`;
