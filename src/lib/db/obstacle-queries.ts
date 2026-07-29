@@ -7,7 +7,7 @@ import {
   type ObstacleRow,
   type NewObstacle,
 } from "./schema";
-import type { ObstacleType } from "../obstacles/labels";
+import type { ObstacleType, PinKind } from "../obstacles/labels";
 
 export type ObstacleVoteValue = "up" | "down";
 
@@ -27,6 +27,7 @@ function displayName(name: string | null | undefined, email?: string | null) {
 function toFeature(row: {
   id: string;
   userId: string;
+  kind: PinKind;
   type: ObstacleType;
   lat: number;
   lng: number;
@@ -51,6 +52,7 @@ function toFeature(row: {
     properties: {
       id: row.id,
       userId: row.userId,
+      kind: row.kind,
       type: row.type,
       heightM: row.heightM,
       message: row.message,
@@ -140,16 +142,26 @@ export async function queryObstaclesInBbox(
   north: number,
   limit = 500,
   viewerUserId?: string | null,
+  kind?: PinKind | null,
 ): Promise<GeoJSON.FeatureCollection> {
   if (!(await isDatabaseAvailable())) {
     return { type: "FeatureCollection", features: [] };
   }
 
   const { db } = getDb();
+  const conditions = [
+    gte(obstacles.lng, west),
+    lte(obstacles.lng, east),
+    gte(obstacles.lat, south),
+    lte(obstacles.lat, north),
+  ];
+  if (kind) conditions.push(eq(obstacles.kind, kind));
+
   const rows = await db
     .select({
       id: obstacles.id,
       userId: obstacles.userId,
+      kind: obstacles.kind,
       type: obstacles.type,
       lat: obstacles.lat,
       lng: obstacles.lng,
@@ -162,14 +174,7 @@ export async function queryObstaclesInBbox(
     })
     .from(obstacles)
     .leftJoin(users, eq(obstacles.userId, users.id))
-    .where(
-      and(
-        gte(obstacles.lng, west),
-        lte(obstacles.lng, east),
-        gte(obstacles.lat, south),
-        lte(obstacles.lat, north),
-      ),
-    )
+    .where(and(...conditions))
     .orderBy(desc(obstacles.createdAt))
     .limit(limit);
 
@@ -186,7 +191,12 @@ export async function queryObstaclesInBbox(
         dislikes: 0,
         myVote: null,
       };
-      return toFeature({ ...row, ...t, type: row.type as ObstacleType });
+      return toFeature({
+        ...row,
+        ...t,
+        kind: (row.kind ?? "obstacle") as PinKind,
+        type: row.type as ObstacleType,
+      });
     }),
   };
 }
@@ -321,6 +331,7 @@ export async function listObstaclesByUser(
 ): Promise<
   Array<{
     id: string;
+    kind: PinKind;
     type: ObstacleType;
     lat: number;
     lng: number;
@@ -332,9 +343,10 @@ export async function listObstaclesByUser(
 > {
   if (!(await isDatabaseAvailable())) return [];
   const { db } = getDb();
-  return db
+  const rows = await db
     .select({
       id: obstacles.id,
+      kind: obstacles.kind,
       type: obstacles.type,
       lat: obstacles.lat,
       lng: obstacles.lng,
@@ -347,6 +359,11 @@ export async function listObstaclesByUser(
     .where(eq(obstacles.userId, userId))
     .orderBy(desc(obstacles.createdAt))
     .limit(limit);
+  return rows.map((r) => ({
+    ...r,
+    kind: (r.kind ?? "obstacle") as PinKind,
+    type: r.type as ObstacleType,
+  }));
 }
 
 export async function deleteObstacleByOwner(

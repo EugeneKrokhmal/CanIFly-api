@@ -5,6 +5,8 @@ import {
   clampBboxSpan,
   createObstacleSchema,
   obstacleVoteSchema,
+  type ObstacleType,
+  type PinKind,
 } from "@canifly/middleware";
 import { getSessionUser, isSessionUser, requireUser } from "../lib/auth/session";
 import { ensurePostgisSchema, isDatabaseAvailable } from "../lib/db/client";
@@ -35,7 +37,7 @@ obstaclesRoutes.get("/bbox", async (c) => {
       );
     }
 
-    const { west, south, east, north, limit } = parsed.data;
+    const { west, south, east, north, limit, kind } = parsed.data;
     if (west >= east || south >= north) {
       return c.json(
         { error: "Invalid bbox: west < east and south < north required" },
@@ -52,6 +54,7 @@ obstaclesRoutes.get("/bbox", async (c) => {
       clamped.north,
       limit,
       session?.id,
+      kind,
     );
 
     return c.json(collection);
@@ -73,7 +76,8 @@ obstaclesRoutes.post("/", async (c) => {
     await ensurePostgisSchema();
 
     const contentType = c.req.header("content-type") ?? "";
-    let type: string;
+    let kind: PinKind;
+    let type: ObstacleType;
     let lat: number;
     let lng: number;
     let heightM: number;
@@ -83,6 +87,7 @@ obstaclesRoutes.post("/", async (c) => {
     if (contentType.includes("multipart/form-data")) {
       const form = await c.req.formData();
       const parsed = createObstacleSchema.safeParse({
+        kind: form.get("kind") || "obstacle",
         type: form.get("type"),
         lat: Number(form.get("lat")),
         lng: Number(form.get("lng")),
@@ -99,6 +104,7 @@ obstaclesRoutes.post("/", async (c) => {
           400,
         );
       }
+      kind = parsed.data.kind;
       type = parsed.data.type;
       lat = parsed.data.lat;
       lng = parsed.data.lng;
@@ -115,6 +121,7 @@ obstaclesRoutes.post("/", async (c) => {
           400,
         );
       }
+      kind = parsed.data.kind;
       type = parsed.data.type;
       lat = parsed.data.lat;
       lng = parsed.data.lng;
@@ -135,12 +142,8 @@ obstaclesRoutes.post("/", async (c) => {
 
     const row = await insertObstacle({
       userId: auth.id,
-      type: type as
-        | "construction"
-        | "crane"
-        | "electric_line"
-        | "air_sports"
-        | "other",
+      kind,
+      type,
       lat,
       lng,
       heightM,
@@ -156,6 +159,7 @@ obstaclesRoutes.post("/", async (c) => {
       obstacle: {
         id: row.id,
         userId: row.userId,
+        kind: row.kind,
         type: row.type,
         lat: row.lat,
         lng: row.lng,

@@ -41,6 +41,7 @@ pilotsRoutes.get("/:id", async (c) => {
       },
       obstacles: obstacles.map((o) => ({
         id: o.id,
+        kind: o.kind,
         type: o.type,
         lat: o.lat,
         lng: o.lng,

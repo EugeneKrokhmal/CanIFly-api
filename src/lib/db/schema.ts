@@ -19,11 +19,17 @@ export const zoneSourceEnum = pgEnum("zone_source", [
   "fixture",
 ]);
 
+export const pinKindEnum = pgEnum("pin_kind", ["obstacle", "fly_spot"]);
+
 export const obstacleTypeEnum = pgEnum("obstacle_type", [
   "construction",
   "crane",
   "electric_line",
   "air_sports",
+  "park",
+  "rooftop",
+  "field",
+  "beach",
   "other",
 ]);
 
@@ -40,6 +46,11 @@ export const users = pgTable("users", {
   operatorNumber: text("operator_number"),
   bio: text("bio"),
   avatarUrl: text("avatar_url"),
+  emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
+  emailVerifyToken: text("email_verify_token"),
+  emailVerifyExpires: timestamp("email_verify_expires", {
+    withTimezone: true,
+  }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -55,6 +66,7 @@ export const obstacles = pgTable(
     userId: uuid("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    kind: pinKindEnum("kind").notNull().default("obstacle"),
     type: obstacleTypeEnum("type").notNull(),
     lat: doublePrecision("lat").notNull(),
     lng: doublePrecision("lng").notNull(),
@@ -68,6 +80,7 @@ export const obstacles = pgTable(
   (table) => [
     index("obstacles_lat_lng_idx").on(table.lat, table.lng),
     index("obstacles_user_id_idx").on(table.userId),
+    index("obstacles_kind_lat_lng_idx").on(table.kind, table.lat, table.lng),
   ],
 );
 

@@ -129,9 +129,19 @@ export async function ensurePostgisSchema(): Promise<void> {
     END $$;
   `;
 
+  for (const value of ["other", "park", "rooftop", "field", "beach"] as const) {
+    await sql.unsafe(`
+      DO $$ BEGIN
+        ALTER TYPE obstacle_type ADD VALUE IF NOT EXISTS '${value}';
+      EXCEPTION
+        WHEN duplicate_object THEN null;
+      END $$;
+    `);
+  }
+
   await sql`
     DO $$ BEGIN
-      ALTER TYPE obstacle_type ADD VALUE IF NOT EXISTS 'other';
+      CREATE TYPE pin_kind AS ENUM ('obstacle', 'fly_spot');
     EXCEPTION
       WHEN duplicate_object THEN null;
     END $$;
@@ -166,11 +176,31 @@ export async function ensurePostgisSchema(): Promise<void> {
     ALTER TABLE users
       ADD COLUMN IF NOT EXISTS avatar_url text;
   `;
+  await sql`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS email_verified_at timestamptz;
+  `;
+  await sql`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS email_verify_token text;
+  `;
+  await sql`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS email_verify_expires timestamptz;
+  `;
+  // Legacy accounts created before email verification: treat as verified.
+  await sql`
+    UPDATE users
+    SET email_verified_at = COALESCE(email_verified_at, created_at)
+    WHERE email_verified_at IS NULL
+      AND email_verify_token IS NULL;
+  `;
 
   await sql`
     CREATE TABLE IF NOT EXISTS obstacles (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
       user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind pin_kind NOT NULL DEFAULT 'obstacle',
       type obstacle_type NOT NULL,
       lat double precision NOT NULL,
       lng double precision NOT NULL,
@@ -187,12 +217,21 @@ export async function ensurePostgisSchema(): Promise<void> {
   `;
 
   await sql`
+    ALTER TABLE obstacles
+      ADD COLUMN IF NOT EXISTS kind pin_kind NOT NULL DEFAULT 'obstacle';
+  `;
+
+  await sql`
     CREATE INDEX IF NOT EXISTS obstacles_lat_lng_idx
       ON obstacles (lat, lng);
   `;
   await sql`
     CREATE INDEX IF NOT EXISTS obstacles_user_id_idx
       ON obstacles (user_id);
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS obstacles_kind_lat_lng_idx
+      ON obstacles (kind, lat, lng);
   `;
 
   await sql`
