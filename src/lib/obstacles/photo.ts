@@ -60,12 +60,50 @@ async function compressImage(
   }
 }
 
+function storageHeaders(key: string, contentType?: string): HeadersInit {
+  const headers: Record<string, string> = {
+    apikey: key,
+  };
+  // Legacy service_role is a JWT and must be sent as Bearer.
+  // New sb_secret_ keys are NOT JWTs — Bearer causes "Invalid JWT".
+  if (key.startsWith("eyJ")) {
+    headers.Authorization = `Bearer ${key}`;
+  } else {
+    // Allowed when Authorization exactly matches apikey (new key model).
+    headers.Authorization = key;
+  }
+  if (contentType) headers["Content-Type"] = contentType;
+  return headers;
+}
+
+async function ensurePublicBucket(cfg: { url: string; key: string }) {
+  const res = await fetch(`${cfg.url}/storage/v1/bucket`, {
+    method: "POST",
+    headers: {
+      ...storageHeaders(cfg.key, "application/json"),
+    },
+    body: JSON.stringify({
+      name: BUCKET,
+      public: true,
+      file_size_limit: 12 * 1024 * 1024,
+      allowed_mime_types: ["image/jpeg", "image/png", "image/webp"],
+    }),
+  });
+  // 200 created, 409 already exists — both fine
+  if (!res.ok && res.status !== 409) {
+    const body = await res.text().catch(() => "");
+    console.warn("[storage] ensure bucket", res.status, body.slice(0, 200));
+  }
+}
+
 async function saveToSupabase(
   dirName: DirName,
   buffer: Buffer,
 ): Promise<{ url: string } | { error: string }> {
   const cfg = supabaseConfig();
   if (!cfg) return { error: "Storage not configured" };
+
+  await ensurePublicBucket(cfg);
 
   const filename = `${randomUUID()}.jpg`;
   const objectPath = `${dirName}/${filename}`;
@@ -74,9 +112,7 @@ async function saveToSupabase(
   const res = await fetch(uploadUrl, {
     method: "POST",
     headers: {
-      Authorization: `Bearer ${cfg.key}`,
-      apikey: cfg.key,
-      "Content-Type": "image/jpeg",
+      ...storageHeaders(cfg.key, "image/jpeg"),
       "x-upsert": "false",
     },
     body: buffer,
@@ -85,7 +121,12 @@ async function saveToSupabase(
   if (!res.ok) {
     const body = await res.text().catch(() => "");
     console.error("[storage] upload failed", res.status, body.slice(0, 300));
-    return { error: "Could not upload image" };
+    return {
+      error:
+        res.status === 404 || body.includes("Bucket not found")
+          ? "Storage bucket missing — create public bucket canifly-uploads in Supabase"
+          : "Could not upload image",
+    };
   }
 
   const publicUrl = `${cfg.url}/storage/v1/object/public/${BUCKET}/${objectPath}`;
@@ -106,10 +147,7 @@ async function deleteFromSupabase(photoUrl: string) {
     `${cfg.url}/storage/v1/object/${BUCKET}/${objectPath}`,
     {
       method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${cfg.key}`,
-        apikey: cfg.key,
-      },
+      headers: storageHeaders(cfg.key),
     },
   );
   if (!res.ok) {
