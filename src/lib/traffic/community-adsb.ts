@@ -1,6 +1,9 @@
 /**
  * Community ADS-B feeds used when OpenSky is unreachable
  * (common from cloud hosts — OpenSky may block hyperscaler IPs).
+ *
+ * Parallel-fetch multiple free aggregators and keep the freshest
+ * position per aircraft (lowest seen_pos).
  */
 
 export type TrafficBbox = {
@@ -9,6 +12,8 @@ export type TrafficBbox = {
   east: number;
   north: number;
 };
+
+export type CommunityAdsbSource = "adsb.lol" | "airplanes.live" | "adsb.fi";
 
 type AdsbAircraft = {
   hex?: string;
@@ -37,6 +42,9 @@ const FT_TO_M = 0.3048;
 const KT_TO_MS = 0.514444;
 const FT_MIN_TO_MS = 0.00508;
 
+/** Drop reports older than this — stale ADS-B drifts badly when coasted. */
+const MAX_SEEN_POS_S = 45;
+
 function bboxCenterRadiusNm(bbox: TrafficBbox): {
   lat: number;
   lon: number;
@@ -47,7 +55,6 @@ function bboxCenterRadiusNm(bbox: TrafficBbox): {
   const latKm = (bbox.north - bbox.south) * 111;
   const lonKm =
     (bbox.east - bbox.west) * 111 * Math.cos((lat * Math.PI) / 180);
-  // Cover the bbox circle + a little margin; APIs use nautical miles (max ~250).
   const radiusNm = Math.min(
     250,
     Math.max(25, (Math.hypot(latKm, lonKm) / 2 / 1.852) * 1.15),
@@ -70,15 +77,30 @@ function altitudeM(raw: number | string | undefined): number | null {
   return raw * FT_TO_M;
 }
 
+function seenPosSec(ac: AdsbAircraft): number {
+  if (typeof ac.seen_pos === "number" && Number.isFinite(ac.seen_pos)) {
+    return Math.max(0, ac.seen_pos);
+  }
+  if (typeof ac.seen === "number" && Number.isFinite(ac.seen)) {
+    return Math.max(0, ac.seen);
+  }
+  // Unknown age — treat as moderately fresh so we don't drop everything.
+  return 5;
+}
+
 function toFeature(
   ac: AdsbAircraft,
   bbox: TrafficBbox,
+  source: CommunityAdsbSource,
 ): GeoJSON.Feature | null {
   const lat = ac.lat;
   const lon = ac.lon;
   if (typeof lat !== "number" || typeof lon !== "number") return null;
   if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
   if (!inBbox(lat, lon, bbox)) return null;
+
+  const ageS = seenPosSec(ac);
+  if (ageS > MAX_SEEN_POS_S) return null;
 
   const alt =
     altitudeM(ac.alt_baro) ??
@@ -124,6 +146,8 @@ function toFeature(
       squawk: ac.squawk ?? null,
       registration: ac.r ?? null,
       aircraftType: ac.t ?? null,
+      seenPosSec: ageS,
+      source,
     },
   };
 }
@@ -142,22 +166,37 @@ async function fetchJson(url: string, timeoutMs: number): Promise<AdsbResponse> 
   return (await res.json()) as AdsbResponse;
 }
 
+function mergeFreshest(features: GeoJSON.Feature[]): GeoJSON.Feature[] {
+  const byIcao = new Map<string, GeoJSON.Feature>();
+  for (const f of features) {
+    const icao = String(f.properties?.icao24 ?? "");
+    if (!icao) continue;
+    const age = Number(f.properties?.seenPosSec ?? 99);
+    const prev = byIcao.get(icao);
+    if (!prev) {
+      byIcao.set(icao, f);
+      continue;
+    }
+    const prevAge = Number(prev.properties?.seenPosSec ?? 99);
+    if (age < prevAge) byIcao.set(icao, f);
+  }
+  return [...byIcao.values()];
+}
+
 /**
  * Live aircraft near bbox via public ADS-B aggregators (no API key).
- * Tries adsb.lol → airplanes.live → adsb.fi.
+ * Fetches feeds in parallel and keeps the freshest report per ICAO24.
  */
 export async function fetchCommunityAdsb(
   bbox: TrafficBbox,
 ): Promise<{
   features: GeoJSON.Feature[];
-  source: "adsb.lol" | "airplanes.live" | "adsb.fi";
+  source: string;
+  sources: CommunityAdsbSource[];
 }> {
   const { lat, lon, radiusNm } = bboxCenterRadiusNm(bbox);
   const radius = Math.round(radiusNm);
-  const urls: {
-    source: "adsb.lol" | "airplanes.live" | "adsb.fi";
-    url: string;
-  }[] = [
+  const urls: { source: CommunityAdsbSource; url: string }[] = [
     {
       source: "adsb.lol",
       url: `https://api.adsb.lol/v2/lat/${lat.toFixed(4)}/lon/${lon.toFixed(4)}/dist/${radius}`,
@@ -168,27 +207,41 @@ export async function fetchCommunityAdsb(
     },
     {
       source: "adsb.fi",
+      // v2 lat/lon/dist (opendata); some clusters also expose /v3/…
       url: `https://opendata.adsb.fi/api/v2/lat/${lat.toFixed(4)}/lon/${lon.toFixed(4)}/dist/${radius}`,
     },
   ];
 
-  let lastErr: unknown;
-  for (const candidate of urls) {
-    try {
-      const payload = await fetchJson(candidate.url, 12_000);
+  const settled = await Promise.allSettled(
+    urls.map(async (candidate) => {
+      const payload = await fetchJson(candidate.url, 8_000);
       const features: GeoJSON.Feature[] = [];
       for (const ac of payload.ac ?? []) {
-        const f = toFeature(ac, bbox);
+        const f = toFeature(ac, bbox, candidate.source);
         if (f) features.push(f);
       }
-      return { features, source: candidate.source };
-    } catch (err) {
-      lastErr = err;
-      console.warn(`[traffic] ${candidate.source} failed`, err);
+      return { source: candidate.source, features };
+    }),
+  );
+
+  const ok: { source: CommunityAdsbSource; features: GeoJSON.Feature[] }[] = [];
+  for (const result of settled) {
+    if (result.status === "fulfilled") {
+      ok.push(result.value);
+    } else {
+      console.warn("[traffic] community feed failed", result.reason);
     }
   }
 
-  throw lastErr instanceof Error
-    ? lastErr
-    : new Error("community_adsb_unavailable");
+  if (ok.length === 0) {
+    throw new Error("community_adsb_unavailable");
+  }
+
+  const merged = mergeFreshest(ok.flatMap((r) => r.features));
+  const sources = ok.map((r) => r.source);
+  return {
+    features: merged,
+    source: sources.length === 1 ? sources[0] : `merged:${sources.join("+")}`,
+    sources,
+  };
 }

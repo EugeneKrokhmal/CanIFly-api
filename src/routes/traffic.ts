@@ -15,8 +15,8 @@ import {
 
 export const trafficRoutes = new Hono();
 
-/** Long TTL — clients dead-reckon between refreshes. */
-const STATES_TTL_MS = 90_000;
+/** Short TTL — clients poll often; stale cache hurts position accuracy. */
+const STATES_TTL_MS = 12_000;
 const TRACK_TTL_MS = 10 * 60_000;
 
 const aircraftQuerySchema = z.object({
@@ -199,12 +199,13 @@ async function fetchCommunityAircraft(opts: {
   east: number;
   north: number;
 }): Promise<AircraftPayload> {
-  const { features, source } = await fetchCommunityAdsb(opts);
+  const { features, source, sources } = await fetchCommunityAdsb(opts);
   return {
     type: "FeatureCollection",
     features,
     meta: {
       source,
+      sources,
       authenticated: false,
       time: Math.floor(Date.now() / 1000),
       count: features.length,
@@ -260,7 +261,24 @@ trafficRoutes.get("/aircraft", async (c) => {
       const again = getOpenskyCached<AircraftPayload>(cacheKey);
       if (again) return again;
 
-      // Prefer OpenSky when reachable; community ADS-B when cloud IPs are blocked.
+      // Prefer community ADS-B (fresher, works from cloud). Try OpenSky only
+      // when community fails — OpenSky is often blocked on Render/AWS.
+      try {
+        const fromCommunity = await fetchCommunityAircraft({
+          west,
+          south,
+          east,
+          north,
+        });
+        setOpenskyCached(cacheKey, fromCommunity, STATES_TTL_MS);
+        return fromCommunity;
+      } catch (communityErr) {
+        console.warn(
+          "[traffic/aircraft] community ADS-B failed, trying OpenSky",
+          communityErr,
+        );
+      }
+
       const fromOpenSky = await fetchOpenSkyAircraft({
         west,
         south,
@@ -274,14 +292,7 @@ trafficRoutes.get("/aircraft", async (c) => {
         return fromOpenSky;
       }
 
-      const fromCommunity = await fetchCommunityAircraft({
-        west,
-        south,
-        east,
-        north,
-      });
-      setOpenskyCached(cacheKey, fromCommunity, STATES_TTL_MS);
-      return fromCommunity;
+      throw new Error("all_traffic_sources_failed");
     });
 
     if (body.meta?.error === "rate_limited") {
