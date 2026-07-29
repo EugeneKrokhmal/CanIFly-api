@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { openskyCredentialsConfigured } from "../lib/traffic/opensky-auth";
 import {
+  coalesceOpensky,
   fetchOpensky,
   getOpenskyCached,
   openskyBboxCacheKey,
@@ -11,8 +13,9 @@ import {
 
 export const trafficRoutes = new Hono();
 
-const STATES_TTL_MS = 25_000;
-const TRACK_TTL_MS = 5 * 60_000;
+/** Long TTL — clients dead-reckon between refreshes. */
+const STATES_TTL_MS = 90_000;
+const TRACK_TTL_MS = 10 * 60_000;
 
 const aircraftQuerySchema = z.object({
   west: z.coerce.number().min(-180).max(180),
@@ -112,7 +115,7 @@ trafficRoutes.get("/aircraft", async (c) => {
       return c.json({ error: "Invalid bbox order" }, 400);
     }
 
-    const maxSpan = 4;
+    const maxSpan = 3;
     if (east - west > maxSpan) {
       const mid = (west + east) / 2;
       west = mid - maxSpan / 2;
@@ -137,88 +140,106 @@ trafficRoutes.get("/aircraft", async (c) => {
       });
     }
 
-    const url = new URL("https://opensky-network.org/api/states/all");
-    url.searchParams.set("lamin", String(south));
-    url.searchParams.set("lomin", String(west));
-    url.searchParams.set("lamax", String(north));
-    url.searchParams.set("lomax", String(east));
+    const body = await coalesceOpensky(cacheKey, async () => {
+      const again = getOpenskyCached<AircraftPayload>(cacheKey);
+      if (again) return again;
 
-    const res = await fetchOpensky(url.toString());
+      const url = new URL("https://opensky-network.org/api/states/all");
+      url.searchParams.set("lamin", String(south));
+      url.searchParams.set("lomin", String(west));
+      url.searchParams.set("lamax", String(north));
+      url.searchParams.set("lomax", String(east));
 
-    if (res.status === 429) {
-      return c.json(emptyRateLimited());
-    }
+      const res = await fetchOpensky(url.toString());
 
-    if (!res.ok) {
-      return c.json({
-        type: "FeatureCollection",
-        features: [],
-        meta: { error: `opensky_${res.status}`, source: "opensky" },
-      });
-    }
+      if (res.status === 429) {
+        return emptyRateLimited();
+      }
 
-    const payload = (await res.json()) as OpenSkyResponse;
-    const features: GeoJSON.Feature[] = [];
+      if (!res.ok) {
+        return {
+          type: "FeatureCollection" as const,
+          features: [] as GeoJSON.Feature[],
+          meta: { error: `opensky_${res.status}`, source: "opensky" },
+        };
+      }
 
-    for (const state of payload.states ?? []) {
-      const lng = state[IDX.longitude];
-      const lat = state[IDX.latitude];
-      if (typeof lng !== "number" || typeof lat !== "number") continue;
-      if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
+      const payload = (await res.json()) as OpenSkyResponse;
+      const features: GeoJSON.Feature[] = [];
 
-      const onGround = Boolean(state[IDX.onGround]);
-      const callsignRaw = state[IDX.callsign];
-      const callsign =
-        typeof callsignRaw === "string" ? callsignRaw.trim() : "";
-      const icao24 = String(state[IDX.icao24] ?? "");
-      const baro =
-        typeof state[IDX.baroAltitude] === "number"
-          ? state[IDX.baroAltitude]
-          : typeof state[IDX.geoAltitude] === "number"
-            ? state[IDX.geoAltitude]
+      for (const state of payload.states ?? []) {
+        const lng = state[IDX.longitude];
+        const lat = state[IDX.latitude];
+        if (typeof lng !== "number" || typeof lat !== "number") continue;
+        if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
+
+        const onGround = Boolean(state[IDX.onGround]);
+        // Skip parked / taxiing — less clutter, same OpenSky cost.
+        if (onGround) continue;
+
+        const callsignRaw = state[IDX.callsign];
+        const callsign =
+          typeof callsignRaw === "string" ? callsignRaw.trim() : "";
+        const icao24 = String(state[IDX.icao24] ?? "");
+        const baro =
+          typeof state[IDX.baroAltitude] === "number"
+            ? state[IDX.baroAltitude]
+            : typeof state[IDX.geoAltitude] === "number"
+              ? state[IDX.geoAltitude]
+              : null;
+        const velocity =
+          typeof state[IDX.velocity] === "number" ? state[IDX.velocity] : null;
+        const track =
+          typeof state[IDX.trueTrack] === "number" ? state[IDX.trueTrack] : 0;
+        const verticalRate =
+          typeof state[IDX.verticalRate] === "number"
+            ? state[IDX.verticalRate]
             : null;
-      const velocity =
-        typeof state[IDX.velocity] === "number" ? state[IDX.velocity] : null;
-      const track =
-        typeof state[IDX.trueTrack] === "number" ? state[IDX.trueTrack] : 0;
-      const verticalRate =
-        typeof state[IDX.verticalRate] === "number"
-          ? state[IDX.verticalRate]
-          : null;
 
-      features.push({
-        type: "Feature",
-        geometry: { type: "Point", coordinates: [lng, lat] },
-        properties: {
-          icao24,
-          callsign: callsign || icao24.toUpperCase(),
-          originCountry: state[IDX.originCountry] ?? "",
-          altitudeM: baro,
-          onGround,
-          velocityMs: velocity,
-          trackDeg: track,
-          verticalRateMs: verticalRate,
-          squawk: state[IDX.squawk] ?? null,
+        features.push({
+          type: "Feature",
+          geometry: { type: "Point", coordinates: [lng, lat] },
+          properties: {
+            icao24,
+            callsign: callsign || icao24.toUpperCase(),
+            originCountry: state[IDX.originCountry] ?? "",
+            altitudeM: baro,
+            onGround,
+            velocityMs: velocity,
+            trackDeg: track,
+            verticalRateMs: verticalRate,
+            squawk: state[IDX.squawk] ?? null,
+          },
+        });
+      }
+
+      const result: AircraftPayload = {
+        type: "FeatureCollection",
+        features,
+        meta: {
+          source: "opensky",
+          authenticated: openskyCredentialsConfigured(),
+          time: payload.time ?? null,
+          count: features.length,
+          west,
+          south,
+          east,
+          north,
+          cached: false,
         },
-      });
-    }
+      };
+      setOpenskyCached(cacheKey, result, STATES_TTL_MS);
+      return result;
+    });
 
-    const body: AircraftPayload = {
-      type: "FeatureCollection",
-      features,
-      meta: {
-        source: "opensky",
-        time: payload.time ?? null,
-        count: features.length,
-        west,
-        south,
-        east,
-        north,
-        cached: false,
-      },
-    };
-    setOpenskyCached(cacheKey, body, STATES_TTL_MS);
-    return c.json(body);
+    if (body.meta?.error === "rate_limited") {
+      return c.json(body);
+    }
+    return c.json(
+      body.meta?.cached
+        ? body
+        : { ...body, meta: { ...body.meta, cached: false } },
+    );
   } catch (err) {
     console.error("[traffic/aircraft]", err);
     return c.json({

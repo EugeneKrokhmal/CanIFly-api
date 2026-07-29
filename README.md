@@ -101,6 +101,11 @@ Health check: `GET http://localhost:4000/health` → `{"ok":true,"service":"cani
 | `ENAIRE_INGEST_SECRET` | Protects admin ingest endpoints |
 | `PORT` | Listen port (default `4000`) |
 | `CORS_ORIGIN` | Allowed browser origin (e.g. `http://localhost:3000`) |
+| `APP_URL` | Public web origin for email links (e.g. `https://canifly.es`) |
+| `RESEND_API_KEY` | Resend API key for verification emails (required in production) |
+| `MAIL_FROM` | From address, e.g. `CanIFly <noreply@yourdomain.com>` |
+| `OPENSKY_CLIENT_ID` | OpenSky API client id (OAuth2 client credentials) |
+| `OPENSKY_CLIENT_SECRET` | OpenSky API client secret |
 
 Never commit `.env`.
 
