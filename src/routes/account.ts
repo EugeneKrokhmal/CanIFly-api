@@ -28,6 +28,7 @@ function toPublicUser(row: {
   operatorNumber: string | null;
   bio: string | null;
   avatarUrl: string | null;
+  locale?: string | null;
 }) {
   return {
     id: row.id,
@@ -36,6 +37,7 @@ function toPublicUser(row: {
     operatorNumber: row.operatorNumber,
     bio: row.bio,
     avatarUrl: row.avatarUrl,
+    locale: row.locale === "en" ? ("en" as const) : ("es" as const),
   };
 }
 
@@ -73,6 +75,7 @@ accountRoutes.patch("/", async (c) => {
         operatorNumber: users.operatorNumber,
         bio: users.bio,
         avatarUrl: users.avatarUrl,
+        locale: users.locale,
       })
       .from(users)
       .where(eq(users.id, auth.id))
@@ -112,6 +115,7 @@ accountRoutes.patch("/", async (c) => {
         operatorNumber: users.operatorNumber,
         bio: users.bio,
         avatarUrl: users.avatarUrl,
+        locale: users.locale,
       });
 
     return c.json({ user: toPublicUser(row) });

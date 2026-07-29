@@ -46,6 +46,7 @@ export const users = pgTable("users", {
   operatorNumber: text("operator_number"),
   bio: text("bio"),
   avatarUrl: text("avatar_url"),
+  locale: text("locale").notNull().default("es"),
   emailVerifiedAt: timestamp("email_verified_at", { withTimezone: true }),
   emailVerifyToken: text("email_verify_token"),
   emailVerifyExpires: timestamp("email_verify_expires", {

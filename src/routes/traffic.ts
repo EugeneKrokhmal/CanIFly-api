@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { fetchCommunityAdsb } from "../lib/traffic/community-adsb";
 import { openskyCredentialsConfigured } from "../lib/traffic/opensky-auth";
 import {
   coalesceOpensky,
@@ -8,6 +9,7 @@ import {
   openskyBboxCacheKey,
   openskyCooldownActive,
   openskyCooldownRemainingMs,
+  openskyUnreachableActive,
   setOpenskyCached,
 } from "../lib/traffic/opensky-cache";
 
@@ -97,6 +99,124 @@ function emptyRateLimited(): AircraftPayload {
   };
 }
 
+function featuresFromOpenSky(payload: OpenSkyResponse): GeoJSON.Feature[] {
+  const features: GeoJSON.Feature[] = [];
+
+  for (const state of payload.states ?? []) {
+    const lng = state[IDX.longitude];
+    const lat = state[IDX.latitude];
+    if (typeof lng !== "number" || typeof lat !== "number") continue;
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
+
+    const onGround = Boolean(state[IDX.onGround]);
+    // Skip parked / taxiing — less clutter, same OpenSky cost.
+    if (onGround) continue;
+
+    const callsignRaw = state[IDX.callsign];
+    const callsign =
+      typeof callsignRaw === "string" ? callsignRaw.trim() : "";
+    const icao24 = String(state[IDX.icao24] ?? "");
+    const baro =
+      typeof state[IDX.baroAltitude] === "number"
+        ? state[IDX.baroAltitude]
+        : typeof state[IDX.geoAltitude] === "number"
+          ? state[IDX.geoAltitude]
+          : null;
+    const velocity =
+      typeof state[IDX.velocity] === "number" ? state[IDX.velocity] : null;
+    const track =
+      typeof state[IDX.trueTrack] === "number" ? state[IDX.trueTrack] : 0;
+    const verticalRate =
+      typeof state[IDX.verticalRate] === "number"
+        ? state[IDX.verticalRate]
+        : null;
+
+    features.push({
+      type: "Feature",
+      geometry: { type: "Point", coordinates: [lng, lat] },
+      properties: {
+        icao24,
+        callsign: callsign || icao24.toUpperCase(),
+        originCountry: state[IDX.originCountry] ?? "",
+        altitudeM: baro,
+        onGround,
+        velocityMs: velocity,
+        trackDeg: track,
+        verticalRateMs: verticalRate,
+        squawk: state[IDX.squawk] ?? null,
+      },
+    });
+  }
+
+  return features;
+}
+
+async function fetchOpenSkyAircraft(opts: {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+}): Promise<AircraftPayload | null> {
+  if (openskyCooldownActive() || openskyUnreachableActive()) return null;
+
+  const url = new URL("https://opensky-network.org/api/states/all");
+  url.searchParams.set("lamin", String(opts.south));
+  url.searchParams.set("lomin", String(opts.west));
+  url.searchParams.set("lamax", String(opts.north));
+  url.searchParams.set("lomax", String(opts.east));
+
+  try {
+    const res = await fetchOpensky(url.toString());
+    if (res.status === 429) return emptyRateLimited();
+    if (!res.ok) return null;
+
+    const payload = (await res.json()) as OpenSkyResponse;
+    const features = featuresFromOpenSky(payload);
+    return {
+      type: "FeatureCollection",
+      features,
+      meta: {
+        source: "opensky",
+        authenticated: openskyCredentialsConfigured(),
+        time: payload.time ?? null,
+        count: features.length,
+        west: opts.west,
+        south: opts.south,
+        east: opts.east,
+        north: opts.north,
+        cached: false,
+      },
+    };
+  } catch (err) {
+    console.warn("[traffic/aircraft] OpenSky unavailable, will fallback", err);
+    return null;
+  }
+}
+
+async function fetchCommunityAircraft(opts: {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+}): Promise<AircraftPayload> {
+  const { features, source } = await fetchCommunityAdsb(opts);
+  return {
+    type: "FeatureCollection",
+    features,
+    meta: {
+      source,
+      authenticated: false,
+      time: Math.floor(Date.now() / 1000),
+      count: features.length,
+      west: opts.west,
+      south: opts.south,
+      east: opts.east,
+      north: opts.north,
+      cached: false,
+    },
+  };
+}
+
 trafficRoutes.get("/aircraft", async (c) => {
   try {
     const params = Object.fromEntries(
@@ -127,10 +247,6 @@ trafficRoutes.get("/aircraft", async (c) => {
       north = mid + maxSpan / 2;
     }
 
-    if (openskyCooldownActive()) {
-      return c.json(emptyRateLimited());
-    }
-
     const cacheKey = openskyBboxCacheKey(west, south, east, north);
     const cached = getOpenskyCached<AircraftPayload>(cacheKey);
     if (cached) {
@@ -144,96 +260,45 @@ trafficRoutes.get("/aircraft", async (c) => {
       const again = getOpenskyCached<AircraftPayload>(cacheKey);
       if (again) return again;
 
-      const url = new URL("https://opensky-network.org/api/states/all");
-      url.searchParams.set("lamin", String(south));
-      url.searchParams.set("lomin", String(west));
-      url.searchParams.set("lamax", String(north));
-      url.searchParams.set("lomax", String(east));
-
-      const res = await fetchOpensky(url.toString());
-
-      if (res.status === 429) {
-        return emptyRateLimited();
+      // Prefer OpenSky when reachable; community ADS-B when cloud IPs are blocked.
+      const fromOpenSky = await fetchOpenSkyAircraft({
+        west,
+        south,
+        east,
+        north,
+      });
+      if (fromOpenSky) {
+        if (fromOpenSky.meta?.error !== "rate_limited") {
+          setOpenskyCached(cacheKey, fromOpenSky, STATES_TTL_MS);
+        }
+        return fromOpenSky;
       }
 
-      if (!res.ok) {
-        return {
-          type: "FeatureCollection" as const,
-          features: [] as GeoJSON.Feature[],
-          meta: { error: `opensky_${res.status}`, source: "opensky" },
-        };
-      }
+      const fromCommunity = await fetchCommunityAircraft({
+        west,
+        south,
+        east,
+        north,
+      });
+      setOpenskyCached(cacheKey, fromCommunity, STATES_TTL_MS);
+      return fromCommunity;
+    });
 
-      const payload = (await res.json()) as OpenSkyResponse;
-      const features: GeoJSON.Feature[] = [];
-
-      for (const state of payload.states ?? []) {
-        const lng = state[IDX.longitude];
-        const lat = state[IDX.latitude];
-        if (typeof lng !== "number" || typeof lat !== "number") continue;
-        if (!Number.isFinite(lng) || !Number.isFinite(lat)) continue;
-
-        const onGround = Boolean(state[IDX.onGround]);
-        // Skip parked / taxiing — less clutter, same OpenSky cost.
-        if (onGround) continue;
-
-        const callsignRaw = state[IDX.callsign];
-        const callsign =
-          typeof callsignRaw === "string" ? callsignRaw.trim() : "";
-        const icao24 = String(state[IDX.icao24] ?? "");
-        const baro =
-          typeof state[IDX.baroAltitude] === "number"
-            ? state[IDX.baroAltitude]
-            : typeof state[IDX.geoAltitude] === "number"
-              ? state[IDX.geoAltitude]
-              : null;
-        const velocity =
-          typeof state[IDX.velocity] === "number" ? state[IDX.velocity] : null;
-        const track =
-          typeof state[IDX.trueTrack] === "number" ? state[IDX.trueTrack] : 0;
-        const verticalRate =
-          typeof state[IDX.verticalRate] === "number"
-            ? state[IDX.verticalRate]
-            : null;
-
-        features.push({
-          type: "Feature",
-          geometry: { type: "Point", coordinates: [lng, lat] },
-          properties: {
-            icao24,
-            callsign: callsign || icao24.toUpperCase(),
-            originCountry: state[IDX.originCountry] ?? "",
-            altitudeM: baro,
-            onGround,
-            velocityMs: velocity,
-            trackDeg: track,
-            verticalRateMs: verticalRate,
-            squawk: state[IDX.squawk] ?? null,
-          },
-        });
-      }
-
-      const result: AircraftPayload = {
-        type: "FeatureCollection",
-        features,
-        meta: {
-          source: "opensky",
-          authenticated: openskyCredentialsConfigured(),
-          time: payload.time ?? null,
-          count: features.length,
+    if (body.meta?.error === "rate_limited") {
+      // Still try community feed so the map is not empty during OpenSky cooldown.
+      try {
+        const fromCommunity = await fetchCommunityAircraft({
           west,
           south,
           east,
           north,
-          cached: false,
-        },
-      };
-      setOpenskyCached(cacheKey, result, STATES_TTL_MS);
-      return result;
-    });
-
-    if (body.meta?.error === "rate_limited") {
-      return c.json(body);
+        });
+        setOpenskyCached(cacheKey, fromCommunity, STATES_TTL_MS);
+        return c.json(fromCommunity);
+      } catch (err) {
+        console.warn("[traffic/aircraft] community fallback failed", err);
+        return c.json(body);
+      }
     }
     return c.json(
       body.meta?.cached
@@ -245,7 +310,7 @@ trafficRoutes.get("/aircraft", async (c) => {
     return c.json({
       type: "FeatureCollection",
       features: [],
-      meta: { error: "fetch_failed", source: "opensky" },
+      meta: { error: "fetch_failed", source: "adsb" },
     });
   }
 });
@@ -291,7 +356,17 @@ trafficRoutes.get("/track", async (c) => {
     }
 
     const url = `https://opensky-network.org/api/tracks/all?icao24=${icao24}&time=0`;
-    const res = await fetchOpensky(url);
+    let res: Response;
+    try {
+      res = await fetchOpensky(url);
+    } catch (err) {
+      console.warn("[traffic/track] OpenSky unavailable", err);
+      return c.json({
+        type: "FeatureCollection",
+        features: [],
+        meta: { icao24, error: "unavailable", source: "opensky" },
+      });
+    }
 
     if (res.status === 404) {
       const body: TrackPayload = {

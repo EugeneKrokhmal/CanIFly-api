@@ -15,6 +15,8 @@ const g = globalThis as typeof globalThis & {
   __openskyCache?: Map<string, CacheEntry<unknown>>;
   __openskyCooldownUntil?: number;
   __openskyInflight?: Map<string, Promise<unknown>>;
+  /** Skip OpenSky until this time after connect/timeout failures (cloud IP blocks). */
+  __openskyUnreachableUntil?: number;
 };
 
 function cacheStore(): Map<string, CacheEntry<unknown>> {
@@ -33,6 +35,18 @@ export function openskyCooldownActive(): boolean {
 
 export function openskyCooldownRemainingMs(): number {
   return Math.max(0, (g.__openskyCooldownUntil ?? 0) - Date.now());
+}
+
+/** True when OpenSky recently failed to connect (often blocked on cloud hosts). */
+export function openskyUnreachableActive(): boolean {
+  return Date.now() < (g.__openskyUnreachableUntil ?? 0);
+}
+
+export function markOpenskyUnreachable(ms = 30 * 60_000): void {
+  g.__openskyUnreachableUntil = Date.now() + ms;
+  console.warn(
+    `[opensky] marking unreachable for ${Math.round(ms / 1000)}s — using community ADS-B`,
+  );
 }
 
 /** Back off after rate limit. Authenticated: 2 min; anonymous: 10 min. */
@@ -96,20 +110,40 @@ export async function fetchOpensky(
   const token = await getOpenskyAccessToken();
   const headers: Record<string, string> = {
     Accept: "application/json",
+    "User-Agent": "CanIFly/1.0 (+https://canifly.org)",
     ...(init?.headers as Record<string, string> | undefined),
   };
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  let res = await fetch(url, { ...init, headers });
+  /** OpenSky often hangs or blocks cloud IPs — fail fast for fallback. */
+  const timeoutMs = Number(process.env.OPENSKY_TIMEOUT_MS ?? 8_000);
+  const signal =
+    init?.signal ??
+    (Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? AbortSignal.timeout(timeoutMs)
+      : undefined);
+
+  let res: Response;
+  try {
+    res = await fetch(url, { ...init, headers, signal });
+  } catch (err) {
+    console.warn("[opensky] fetch failed", err);
+    markOpenskyUnreachable();
+    throw err;
+  }
 
   if (res.status === 401 && token) {
     invalidateOpenskyToken();
     const fresh = await getOpenskyAccessToken();
     if (fresh) {
       headers.Authorization = `Bearer ${fresh}`;
-      res = await fetch(url, { ...init, headers });
+      res = await fetch(url, {
+        ...init,
+        headers,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
     }
   }
 

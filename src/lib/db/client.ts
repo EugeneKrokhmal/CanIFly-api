@@ -185,6 +185,10 @@ async function runPostgisSchemaMigrations(): Promise<void> {
   `;
   await sql`
     ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS locale text NOT NULL DEFAULT 'es';
+  `;
+  await sql`
+    ALTER TABLE users
       ADD COLUMN IF NOT EXISTS email_verified_at timestamptz;
   `;
   await sql`

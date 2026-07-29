@@ -10,6 +10,8 @@ export type SendEmailInput = {
   text: string;
 };
 
+export type MailLocale = "es" | "en";
+
 export function appPublicUrl(): string {
   const raw =
     process.env.APP_URL ??
@@ -20,10 +22,16 @@ export function appPublicUrl(): string {
 }
 
 export function mailFromAddress(): string {
-  return (
-    process.env.MAIL_FROM ??
-    "CanIFly <onboarding@resend.dev>"
-  );
+  return process.env.MAIL_FROM ?? "CanIFly <onboarding@resend.dev>";
+}
+
+export function normalizeMailLocale(value: unknown): MailLocale {
+  return value === "en" ? "en" : "es";
+}
+
+export function verificationUrl(locale: MailLocale, token: string): string {
+  const path = locale === "en" ? "/en/verify-email" : "/verify-email";
+  return `${appPublicUrl()}${path}?token=${encodeURIComponent(token)}`;
 }
 
 export async function sendEmail(input: SendEmailInput): Promise<void> {
@@ -57,30 +65,54 @@ export async function sendEmail(input: SendEmailInput): Promise<void> {
   }
 }
 
+const COPY = {
+  es: {
+    subject: "Verifica tu email en CanIFly",
+    tagline: "Mapa de espacio aéreo UAS en España",
+    title: "Verifica tu email",
+    hello: (name: string) => `Hola ${name},`,
+    body: "Confirma tu cuenta de CanIFly para reportar obstáculos y zonas de vuelo en el mapa.",
+    cta: "Verificar email",
+    orPaste: "O pega este enlace en el navegador:",
+    expires:
+      "Este enlace caduca en 24 horas. Si no te has registrado, puedes ignorar este email.",
+    footer: "Ayuda de planificación, no una autorización oficial",
+    text: (name: string, url: string) =>
+      `Hola ${name},\n\nConfirma tu cuenta de CanIFly:\n${url}\n\nEste enlace caduca en 24 horas.\n\nSi no te has registrado, ignora este email.\n\n— CanIFly · https://canifly.org`,
+  },
+  en: {
+    subject: "Verify your CanIFly email",
+    tagline: "Spain UAS airspace map",
+    title: "Verify your email",
+    hello: (name: string) => `Hi ${name},`,
+    body: "Confirm your CanIFly account to report obstacles and fly spots on the map.",
+    cta: "Verify email",
+    orPaste: "Or paste this link into your browser:",
+    expires:
+      "This link expires in 24 hours. If you did not sign up, you can ignore this email.",
+    footer: "Planning aid, not official clearance",
+    text: (name: string, url: string) =>
+      `Hi ${name},\n\nConfirm your CanIFly account:\n${url}\n\nThis link expires in 24 hours.\n\nIf you did not sign up, ignore this email.\n\n— CanIFly · https://canifly.org`,
+  },
+} as const;
+
 export function verificationEmailContent(opts: {
   name: string;
   verifyUrl: string;
+  locale?: MailLocale | string | null;
 }): { subject: string; html: string; text: string } {
-  const subject = "Verify your CanIFly email";
-  const text = `Hi ${opts.name},
-
-Confirm your CanIFly account:
-${opts.verifyUrl}
-
-This link expires in 24 hours.
-
-If you did not sign up, ignore this email.
-
-— CanIFly · https://canifly.org`;
+  const locale = normalizeMailLocale(opts.locale);
+  const t = COPY[locale];
+  const subject = t.subject;
+  const text = t.text(opts.name, opts.verifyUrl);
 
   const site = escapeHtml(appPublicUrl());
   const name = escapeHtml(opts.name);
   const url = escapeHtml(opts.verifyUrl);
 
-  // Table-based layout for broad email-client support; colors match the web app.
   const html = `
 <!DOCTYPE html>
-<html lang="en">
+<html lang="${locale}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -96,33 +128,33 @@ If you did not sign up, ignore this email.
               <p style="margin:0;font-size:22px;font-weight:700;letter-spacing:-0.02em;color:#222222;">
                 CanI<span style="color:#ff385c;">Fly</span>
               </p>
-              <p style="margin:6px 0 0 0;font-size:13px;color:#717171;">Spain UAS airspace map</p>
+              <p style="margin:6px 0 0 0;font-size:13px;color:#717171;">${escapeHtml(t.tagline)}</p>
             </td>
           </tr>
           <tr>
             <td style="padding:16px 28px 8px 28px;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#222222;">
-              <h1 style="margin:0 0 12px 0;font-size:20px;line-height:1.3;font-weight:700;">Verify your email</h1>
-              <p style="margin:0 0 12px 0;font-size:15px;line-height:1.55;color:#222222;">Hi ${name},</p>
+              <h1 style="margin:0 0 12px 0;font-size:20px;line-height:1.3;font-weight:700;">${escapeHtml(t.title)}</h1>
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:1.55;color:#222222;">${escapeHtml(t.hello(opts.name))}</p>
               <p style="margin:0 0 24px 0;font-size:15px;line-height:1.55;color:#717171;">
-                Confirm your CanIFly account to report obstacles and fly spots on the map.
+                ${escapeHtml(t.body)}
               </p>
               <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 24px 0;">
                 <tr>
                   <td style="border-radius:999px;background:#222222;">
                     <a href="${url}" style="display:inline-block;padding:12px 22px;font-family:system-ui,-apple-system,sans-serif;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;">
-                      Verify email
+                      ${escapeHtml(t.cta)}
                     </a>
                   </td>
                 </tr>
               </table>
               <p style="margin:0 0 8px 0;font-size:12px;line-height:1.5;color:#717171;">
-                Or paste this link into your browser:
+                ${escapeHtml(t.orPaste)}
               </p>
               <p style="margin:0 0 20px 0;font-size:12px;line-height:1.5;word-break:break-all;">
                 <a href="${url}" style="color:#ff385c;">${url}</a>
               </p>
               <p style="margin:0;font-size:12px;line-height:1.5;color:#b0b0b0;">
-                This link expires in 24 hours. If you did not sign up, you can ignore this email.
+                ${escapeHtml(t.expires)}
               </p>
             </td>
           </tr>
@@ -130,7 +162,7 @@ If you did not sign up, ignore this email.
             <td style="padding:20px 28px 28px 28px;font-family:system-ui,-apple-system,sans-serif;border-top:1px solid #f0f0f0;">
               <p style="margin:0;font-size:12px;color:#b0b0b0;">
                 <a href="${site}" style="color:#717171;text-decoration:none;font-weight:600;">canifly.org</a>
-                · Planning aid, not official clearance
+                · ${escapeHtml(t.footer)}
               </p>
             </td>
           </tr>

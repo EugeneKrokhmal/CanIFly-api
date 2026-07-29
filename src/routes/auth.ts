@@ -6,12 +6,15 @@ import {
   authEmailSchema,
   authRegisterSchema,
   authVerifyTokenSchema,
+  updateLocaleSchema,
 } from "@canifly/middleware";
 import { hashPassword, verifyPassword } from "../lib/auth/password";
 import {
-  appPublicUrl,
+  normalizeMailLocale,
   sendEmail,
   verificationEmailContent,
+  verificationUrl,
+  type MailLocale,
 } from "../lib/auth/mail";
 import {
   clearAuthCookie,
@@ -32,6 +35,7 @@ function publicUser(row: {
   operatorNumber: string | null;
   bio?: string | null;
   avatarUrl?: string | null;
+  locale?: string | null;
 }) {
   return {
     id: row.id,
@@ -40,6 +44,7 @@ function publicUser(row: {
     operatorNumber: row.operatorNumber,
     bio: row.bio ?? null,
     avatarUrl: row.avatarUrl ?? null,
+    locale: normalizeMailLocale(row.locale),
   };
 }
 
@@ -51,11 +56,13 @@ async function issueVerificationEmail(opts: {
   email: string;
   name: string;
   token: string;
+  locale: MailLocale;
 }) {
-  const verifyUrl = `${appPublicUrl()}/verify-email?token=${encodeURIComponent(opts.token)}`;
+  const verifyUrl = verificationUrl(opts.locale, opts.token);
   const content = verificationEmailContent({
     name: opts.name,
     verifyUrl,
+    locale: opts.locale,
   });
   await sendEmail({
     to: opts.email,
@@ -85,6 +92,7 @@ authRoutes.post("/register", async (c) => {
     const email = parsed.data.email.toLowerCase();
     const name = parsed.data.name.trim();
     const operatorNumber = parsed.data.operatorNumber;
+    const locale = normalizeMailLocale(parsed.data.locale);
     const passwordHash = await hashPassword(parsed.data.password);
     const token = newVerifyToken();
     const expires = new Date(Date.now() + VERIFY_TTL_MS);
@@ -110,13 +118,14 @@ authRoutes.post("/register", async (c) => {
           passwordHash,
           name,
           operatorNumber,
+          locale,
           emailVerifyToken: token,
           emailVerifyExpires: expires,
         })
         .where(eq(users.id, existing[0].id));
 
       try {
-        await issueVerificationEmail({ email, name, token });
+        await issueVerificationEmail({ email, name, token, locale });
       } catch (err) {
         console.error("[auth/register] mail", err);
         return c.json({ error: "Could not send verification email" }, 502);
@@ -133,13 +142,14 @@ authRoutes.post("/register", async (c) => {
       passwordHash,
       name,
       operatorNumber,
+      locale,
       emailVerifiedAt: null,
       emailVerifyToken: token,
       emailVerifyExpires: expires,
     });
 
     try {
-      await issueVerificationEmail({ email, name, token });
+      await issueVerificationEmail({ email, name, token, locale });
     } catch (err) {
       console.error("[auth/register] mail", err);
       return c.json({ error: "Could not send verification email" }, 502);
@@ -256,9 +266,10 @@ authRoutes.post("/verify-email", async (c) => {
         operatorNumber: users.operatorNumber,
         bio: users.bio,
         avatarUrl: users.avatarUrl,
+        locale: users.locale,
       });
 
-    const user = publicUser(updated);
+    const user = publicUser({ ...updated, locale: updated.locale ?? row.locale });
     await setAuthCookie(c, { id: user.id, email: user.email });
     return c.json({ user });
   } catch (err) {
@@ -309,6 +320,7 @@ authRoutes.post("/resend-verification", async (c) => {
         email: row.email,
         name: row.name || row.email.split("@")[0] || "Pilot",
         token,
+        locale: normalizeMailLocale(row.locale),
       });
     } catch (err) {
       console.error("[auth/resend-verification] mail", err);
@@ -319,6 +331,51 @@ authRoutes.post("/resend-verification", async (c) => {
   } catch (err) {
     console.error("[auth/resend-verification]", err);
     return c.json({ error: "Could not resend verification" }, 500);
+  }
+});
+
+authRoutes.patch("/locale", async (c) => {
+  try {
+    const session = await getSessionUser(c);
+    if (!session) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    if (!(await isDatabaseAvailable())) {
+      return c.json({ error: "Database unavailable" }, 503);
+    }
+
+    await ensurePostgisSchema();
+
+    const body = await c.req.json().catch(() => null);
+    const parsed = updateLocaleSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: "Invalid locale" }, 400);
+    }
+
+    const { db } = getDb();
+    const [row] = await db
+      .update(users)
+      .set({ locale: parsed.data.locale })
+      .where(eq(users.id, session.id))
+      .returning({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        operatorNumber: users.operatorNumber,
+        bio: users.bio,
+        avatarUrl: users.avatarUrl,
+        locale: users.locale,
+        emailVerifiedAt: users.emailVerifiedAt,
+      });
+
+    if (!row || !row.emailVerifiedAt) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    return c.json({ user: publicUser(row) });
+  } catch (err) {
+    console.error("[auth/locale]", err);
+    return c.json({ error: "Failed to update locale" }, 500);
   }
 });
 
@@ -337,6 +394,7 @@ authRoutes.get("/me", async (c) => {
         operatorNumber: null,
         bio: null,
         avatarUrl: null,
+        locale: "es" as const,
       },
     });
   }
@@ -350,6 +408,7 @@ authRoutes.get("/me", async (c) => {
       operatorNumber: users.operatorNumber,
       bio: users.bio,
       avatarUrl: users.avatarUrl,
+      locale: users.locale,
       emailVerifiedAt: users.emailVerifiedAt,
     })
     .from(users)
