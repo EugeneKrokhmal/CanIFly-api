@@ -14,6 +14,8 @@ declare global {
   var __caniflyDb: ReturnType<typeof drizzle<typeof schema>> | undefined;
   var __caniflyDbAvailable: boolean | undefined;
   var __caniflyDbCheckedAt: number | undefined;
+  var __caniflySchemaPromise: Promise<void> | undefined;
+  var __caniflySchemaReady: boolean | undefined;
 }
 
 function createClient() {
@@ -22,7 +24,7 @@ function createClient() {
   const sql = postgres(connectionString, {
     max: 5,
     idle_timeout: 20,
-    connect_timeout: 15,
+    connect_timeout: 10,
     prepare: false,
     ssl: "require",
   });
@@ -68,7 +70,7 @@ export function resetDatabaseAvailabilityCache(): void {
   global.__caniflyDbCheckedAt = undefined;
 }
 
-export async function ensurePostgisSchema(): Promise<void> {
+async function runPostgisSchemaMigrations(): Promise<void> {
   const { sql } = getDb();
   await sql`CREATE EXTENSION IF NOT EXISTS postgis`;
   await sql`CREATE EXTENSION IF NOT EXISTS "pgcrypto"`;
@@ -267,6 +269,35 @@ export async function ensurePostgisSchema(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS obstacle_votes_obstacle_user_uidx
       ON obstacle_votes (obstacle_id, user_id);
   `;
+}
 
-  resetDatabaseAvailabilityCache();
+const SCHEMA_TIMEOUT_MS = 25_000;
+
+/**
+ * Ensure tables/extensions exist. Runs at most once per process (concurrent
+ * callers share the same promise) so map traffic cannot stampede DDL.
+ */
+export async function ensurePostgisSchema(): Promise<void> {
+  if (global.__caniflySchemaReady) return;
+
+  if (!global.__caniflySchemaPromise) {
+    global.__caniflySchemaPromise = (async () => {
+      await Promise.race([
+        runPostgisSchemaMigrations(),
+        new Promise<never>((_, reject) => {
+          setTimeout(
+            () => reject(new Error("PostGIS schema bootstrap timed out")),
+            SCHEMA_TIMEOUT_MS,
+          );
+        }),
+      ]);
+      global.__caniflySchemaReady = true;
+    })().catch((err) => {
+      global.__caniflySchemaPromise = undefined;
+      global.__caniflySchemaReady = false;
+      throw err;
+    });
+  }
+
+  await global.__caniflySchemaPromise;
 }

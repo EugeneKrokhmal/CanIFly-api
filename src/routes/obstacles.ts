@@ -24,7 +24,16 @@ const idSchema = z.string().uuid();
 
 obstaclesRoutes.get("/bbox", async (c) => {
   try {
-    await ensurePostgisSchema();
+    if (!(await isDatabaseAvailable())) {
+      return c.json({ type: "FeatureCollection", features: [] });
+    }
+
+    try {
+      await ensurePostgisSchema();
+    } catch (err) {
+      console.error("[obstacles/bbox] schema", err);
+      return c.json({ type: "FeatureCollection", features: [] });
+    }
 
     const params = Object.fromEntries(
       new URL(c.req.url).searchParams.entries(),

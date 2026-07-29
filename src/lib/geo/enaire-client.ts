@@ -42,6 +42,7 @@ export async function fetchWithRetry(
     try {
       const response = await fetch(url, {
         ...init,
+        signal: init?.signal ?? AbortSignal.timeout(8_000),
         headers: {
           Accept: "application/json, application/geo+json, */*",
           ...(init?.headers ?? {}),
