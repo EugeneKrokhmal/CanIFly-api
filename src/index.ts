@@ -14,6 +14,7 @@ import { pilotsRoutes } from "./routes/pilots";
 import { trafficRoutes } from "./routes/traffic";
 import { weatherRoutes } from "./routes/weather";
 import { zonesRoutes } from "./routes/zones";
+import { isDatabaseAvailable } from "./lib/db/client";
 
 config({ path: ".env" });
 
@@ -28,7 +29,14 @@ app.use(
   }),
 );
 
-app.get("/health", (c) => c.json({ ok: true, service: "canifly-api" }));
+app.get("/health", async (c) => {
+  const db = await isDatabaseAvailable();
+  return c.json({
+    ok: true,
+    service: "canifly-api",
+    database: db ? "up" : "down",
+  });
+});
 
 app.use(
   "/uploads/*",
