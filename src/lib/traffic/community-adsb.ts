@@ -47,10 +47,10 @@ function bboxCenterRadiusNm(bbox: TrafficBbox): {
   const latKm = (bbox.north - bbox.south) * 111;
   const lonKm =
     (bbox.east - bbox.west) * 111 * Math.cos((lat * Math.PI) / 180);
-  // Cover the bbox circle + a little margin; APIs use nautical miles.
+  // Cover the bbox circle + a little margin; APIs use nautical miles (max ~250).
   const radiusNm = Math.min(
-    150,
-    Math.max(15, (Math.hypot(latKm, lonKm) / 2 / 1.852) * 1.15),
+    250,
+    Math.max(25, (Math.hypot(latKm, lonKm) / 2 / 1.852) * 1.15),
   );
   return { lat, lon, radiusNm };
 }
@@ -144,17 +144,20 @@ async function fetchJson(url: string, timeoutMs: number): Promise<AdsbResponse> 
 
 /**
  * Live aircraft near bbox via public ADS-B aggregators (no API key).
- * Tries adsb.lol then airplanes.live.
+ * Tries adsb.lol → airplanes.live → adsb.fi.
  */
 export async function fetchCommunityAdsb(
   bbox: TrafficBbox,
 ): Promise<{
   features: GeoJSON.Feature[];
-  source: "adsb.lol" | "airplanes.live";
+  source: "adsb.lol" | "airplanes.live" | "adsb.fi";
 }> {
   const { lat, lon, radiusNm } = bboxCenterRadiusNm(bbox);
   const radius = Math.round(radiusNm);
-  const urls: { source: "adsb.lol" | "airplanes.live"; url: string }[] = [
+  const urls: {
+    source: "adsb.lol" | "airplanes.live" | "adsb.fi";
+    url: string;
+  }[] = [
     {
       source: "adsb.lol",
       url: `https://api.adsb.lol/v2/lat/${lat.toFixed(4)}/lon/${lon.toFixed(4)}/dist/${radius}`,
@@ -162,6 +165,10 @@ export async function fetchCommunityAdsb(
     {
       source: "airplanes.live",
       url: `https://api.airplanes.live/v2/point/${lat.toFixed(4)}/${lon.toFixed(4)}/${radius}`,
+    },
+    {
+      source: "adsb.fi",
+      url: `https://opendata.adsb.fi/api/v2/lat/${lat.toFixed(4)}/lon/${lon.toFixed(4)}/dist/${radius}`,
     },
   ];
 

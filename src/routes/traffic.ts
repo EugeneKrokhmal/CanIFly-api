@@ -235,7 +235,7 @@ trafficRoutes.get("/aircraft", async (c) => {
       return c.json({ error: "Invalid bbox order" }, 400);
     }
 
-    const maxSpan = 3;
+    const maxSpan = 6;
     if (east - west > maxSpan) {
       const mid = (west + east) / 2;
       west = mid - maxSpan / 2;
