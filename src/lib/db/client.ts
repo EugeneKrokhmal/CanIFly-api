@@ -17,10 +17,14 @@ declare global {
 }
 
 function createClient() {
+  // Supabase transaction pooler (:6543) does not support prepared statements.
+  // Session pooler / direct (:5432) works either way; prepare:false is safe for both.
   const sql = postgres(connectionString, {
     max: 5,
     idle_timeout: 20,
-    connect_timeout: 2,
+    connect_timeout: 15,
+    prepare: false,
+    ssl: "require",
   });
   const db = drizzle(sql, { schema });
   return { sql, db };
@@ -51,7 +55,8 @@ export async function isDatabaseAvailable(): Promise<boolean> {
     const { sql } = getDb();
     await sql`SELECT 1`;
     global.__caniflyDbAvailable = true;
-  } catch {
+  } catch (err) {
+    console.error("[db] availability check failed:", err);
     global.__caniflyDbAvailable = false;
   }
   global.__caniflyDbCheckedAt = now;
