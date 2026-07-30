@@ -16,6 +16,10 @@ import {
   queryDronezonerPoint,
 } from "./dronezoner-client";
 import {
+  queryFocaBbox,
+  queryFocaPoint,
+} from "./foca-client";
+import {
   queryGeopfBbox,
   queryGeopfPoint,
 } from "./geopf-client";
@@ -39,12 +43,13 @@ export interface CountryAirspaceProvider {
 
 export function backendLabelForCountry(
   country: CountryId,
-): "servais" | "pansa" | "aimgis" | "dipul" | "geopf" | "dronezoner" {
+): "servais" | "pansa" | "aimgis" | "dipul" | "geopf" | "dronezoner" | "foca" {
   if (country === "PL") return "pansa";
   if (country === "CZ") return "aimgis";
   if (country === "DE") return "dipul";
   if (country === "FR") return "geopf";
   if (country === "DK") return "dronezoner";
+  if (country === "CH") return "foca";
   return "servais";
 }
 
@@ -91,6 +96,17 @@ export const denmarkProvider: CountryAirspaceProvider = {
   },
 };
 
+/** Switzerland — FOCA SwissUASGeozones on geo.admin.ch (cached). */
+export const switzerlandProvider: CountryAirspaceProvider = {
+  country: "CH",
+  async queryPoint(lat, lng) {
+    return queryFocaPoint(lat, lng);
+  },
+  async queryBbox(west, south, east, north, limit = 500) {
+    return queryFocaBbox(west, south, east, north, limit);
+  },
+};
+
 /** Czechia — live ANS CR ArcGIS (aimgis.rlp.cz). */
 export const czechiaProvider: CountryAirspaceProvider = {
   country: "CZ",
@@ -117,6 +133,7 @@ export const COUNTRY_PROVIDERS: Record<CountryId, CountryAirspaceProvider> = {
   DE: germanyProvider,
   FR: franceProvider,
   DK: denmarkProvider,
+  CH: switzerlandProvider,
   CZ: czechiaProvider,
   PL: polandProvider,
 };

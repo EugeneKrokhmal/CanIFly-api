@@ -32,7 +32,7 @@ import {
 export interface QueryMeta {
   queryMs: number;
   dataVersion: string | null;
-  backend: "servais" | "pansa" | "aimgis" | "dipul" | "geopf" | "dronezoner" | "postgis" | "memory" | "multi";
+  backend: "servais" | "pansa" | "aimgis" | "dipul" | "geopf" | "dronezoner" | "foca" | "postgis" | "memory" | "multi";
   country?: CountryId | null;
   countries?: CountryId[];
   /** Set when a live provider threw (e.g. missing PANSA_API_KEY). */
@@ -81,7 +81,7 @@ export async function queryPointIntersects(
   const provider = getProvider(country);
   try {
     const live = await provider.queryPoint(lat, lng, altitudeAgl);
-    if (live.length > 0 || country === "PL" || country === "CZ" || country === "DE" || country === "FR" || country === "DK") {
+    if (live.length > 0 || country === "PL" || country === "CZ" || country === "DE" || country === "FR" || country === "DK" || country === "CH") {
       return {
         zones: live,
         meta: {
@@ -98,7 +98,7 @@ export async function queryPointIntersects(
       `[queryPointIntersects] ${country} provider failed, falling back`,
       err,
     );
-    if (country === "PL" || country === "CZ" || country === "DE" || country === "FR" || country === "DK") {
+    if (country === "PL" || country === "CZ" || country === "DE" || country === "FR" || country === "DK" || country === "CH") {
       return {
         zones: [],
         meta: {
@@ -321,7 +321,7 @@ async function queryZonesInBboxLive(
           return;
         }
         // Empty success still counts as the live/primary backend for PL/CZ.
-        if (country === "PL" || country === "CZ" || country === "DE" || country === "FR" || country === "DK") {
+        if (country === "PL" || country === "CZ" || country === "DE" || country === "FR" || country === "DK" || country === "CH") {
           backends.add(backendLabelForCountry(country));
         }
       } catch (err) {
@@ -330,7 +330,7 @@ async function queryZonesInBboxLive(
           `[queryZonesInBbox] ${country} provider failed, falling back`,
           err,
         );
-        if (country === "PL" || country === "CZ" || country === "DE" || country === "FR" || country === "DK") {
+        if (country === "PL" || country === "CZ" || country === "DE" || country === "FR" || country === "DK" || country === "CH") {
           backends.add(backendLabelForCountry(country));
           providerError = message;
         }
@@ -379,6 +379,8 @@ async function queryZonesInBboxLive(
                 ? "geopf"
                 : backendList[0] === "dronezoner"
                   ? "dronezoner"
+                  : backendList[0] === "foca"
+                    ? "foca"
                   : backendList[0] === "postgis"
                     ? "postgis"
                     : "memory";

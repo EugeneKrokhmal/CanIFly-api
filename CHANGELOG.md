@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Switzerland live provider via FOCA SwissUASGeozones (`foca-client.ts`, backend label `foca`)
 - Denmark live provider via Trafikstyrelsen Dronezoner GeoJSON (`dronezoner-client.ts`, backend label `dronezoner`)
 - France live provider via Géoportail WFS (`geopf-client.ts`, backend label `geopf`)
 - German mail locale (`de`) for verification and password-reset emails
