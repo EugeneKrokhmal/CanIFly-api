@@ -85,7 +85,7 @@ export async function sendEmail(input: SendEmailInput): Promise<void> {
 const COPY = {
   es: {
     subject: "Verifica tu email en CanIFly",
-    tagline: "Mapa de espacio aéreo UAS en España, Chequia y Polonia",
+    tagline: "Mapa de espacio aéreo UAS en Europa",
     title: "Verifica tu email",
     hello: (name: string) => `Hola ${name},`,
     body: "Confirma tu cuenta de CanIFly para reportar obstáculos y zonas de vuelo en el mapa.",
@@ -99,7 +99,7 @@ const COPY = {
   },
   en: {
     subject: "Verify your CanIFly email",
-    tagline: "Spain, Czechia & Poland UAS airspace map",
+    tagline: "UAS airspace map for Europe",
     title: "Verify your email",
     hello: (name: string) => `Hi ${name},`,
     body: "Confirm your CanIFly account to report obstacles and fly spots on the map.",
@@ -113,7 +113,7 @@ const COPY = {
   },
   de: {
     subject: "Bestätige deine CanIFly-E-Mail",
-    tagline: "UAS-Luftraumkarte für Spanien, Deutschland, Frankreich, Tschechien und Polen",
+    tagline: "UAS-Luftraumkarte für Europa",
     title: "E-Mail bestätigen",
     hello: (name: string) => `Hallo ${name},`,
     body: "Bestätige dein CanIFly-Konto, um Hindernisse und Flugorte auf der Karte zu melden.",
@@ -127,7 +127,7 @@ const COPY = {
   },
   fr: {
     subject: "Vérifiez votre e-mail CanIFly",
-    tagline: "Carte d’espace aérien UAS — Espagne, Allemagne, France, Tchéquie et Pologne",
+    tagline: "Carte d’espace aérien UAS pour l’Europe",
     title: "Vérifier l’e-mail",
     hello: (name: string) => `Bonjour ${name},`,
     body: "Confirmez votre compte CanIFly pour signaler des obstacles et des spots de vol sur la carte.",
@@ -141,7 +141,7 @@ const COPY = {
   },
   pl: {
     subject: "Zweryfikuj e-mail w CanIFly",
-    tagline: "Mapa przestrzeni UAS Hiszpania, Czechy i Polska",
+    tagline: "Mapa przestrzeni UAS dla Europy",
     title: "Zweryfikuj e-mail",
     hello: (name: string) => `Cześć ${name},`,
     body: "Potwierdź konto CanIFly, aby zgłaszać przeszkody i miejsca do lotów na mapie.",
@@ -155,7 +155,7 @@ const COPY = {
   },
   cs: {
     subject: "Ověřte e-mail v CanIFly",
-    tagline: "Mapa vzdušného prostoru UAS ve Španělsku, Česku a Polsku",
+    tagline: "Mapa vzdušného prostoru UAS pro Evropu",
     title: "Ověřte e-mail",
     hello: (name: string) => `Ahoj ${name},`,
     body: "Potvrďte účet CanIFly, abyste mohli nahlašovat překážky a místa k letu na mapě.",
@@ -172,7 +172,7 @@ const COPY = {
 const RESET_COPY = {
   es: {
     subject: "Restablece tu contraseña de CanIFly",
-    tagline: "Mapa de espacio aéreo UAS en España, Chequia y Polonia",
+    tagline: "Mapa de espacio aéreo UAS en Europa",
     title: "Restablecer contraseña",
     hello: (name: string) => `Hola ${name},`,
     body: "Recibimos una solicitud para restablecer la contraseña de tu cuenta CanIFly.",
@@ -186,7 +186,7 @@ const RESET_COPY = {
   },
   en: {
     subject: "Reset your CanIFly password",
-    tagline: "Spain, Czechia & Poland UAS airspace map",
+    tagline: "UAS airspace map for Europe",
     title: "Reset password",
     hello: (name: string) => `Hi ${name},`,
     body: "We received a request to reset the password for your CanIFly account.",
@@ -200,7 +200,7 @@ const RESET_COPY = {
   },
   de: {
     subject: "CanIFly-Passwort zurücksetzen",
-    tagline: "UAS-Luftraumkarte für Spanien, Deutschland, Frankreich, Tschechien und Polen",
+    tagline: "UAS-Luftraumkarte für Europa",
     title: "Passwort zurücksetzen",
     hello: (name: string) => `Hallo ${name},`,
     body: "Wir haben eine Anfrage erhalten, das Passwort deines CanIFly-Kontos zurückzusetzen.",
@@ -214,7 +214,7 @@ const RESET_COPY = {
   },
   fr: {
     subject: "Réinitialisez votre mot de passe CanIFly",
-    tagline: "Carte d’espace aérien UAS — Espagne, Allemagne, France, Tchéquie et Pologne",
+    tagline: "Carte d’espace aérien UAS pour l’Europe",
     title: "Réinitialiser le mot de passe",
     hello: (name: string) => `Bonjour ${name},`,
     body: "Nous avons reçu une demande de réinitialisation du mot de passe de votre compte CanIFly.",
@@ -228,7 +228,7 @@ const RESET_COPY = {
   },
   pl: {
     subject: "Zresetuj hasło CanIFly",
-    tagline: "Mapa przestrzeni UAS Hiszpania, Czechy i Polska",
+    tagline: "Mapa przestrzeni UAS dla Europy",
     title: "Reset hasła",
     hello: (name: string) => `Cześć ${name},`,
     body: "Otrzymaliśmy prośbę o zresetowanie hasła do Twojego konta CanIFly.",
@@ -242,7 +242,7 @@ const RESET_COPY = {
   },
   cs: {
     subject: "Obnovte heslo CanIFly",
-    tagline: "Mapa vzdušného prostoru UAS ve Španělsku, Česku a Polsku",
+    tagline: "Mapa vzdušného prostoru UAS pro Evropu",
     title: "Obnovení hesla",
     hello: (name: string) => `Ahoj ${name},`,
     body: "Obdrželi jsme žádost o obnovení hesla k vašemu účtu CanIFly.",

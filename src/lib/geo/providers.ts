@@ -12,6 +12,10 @@ import {
   queryDipulPoint,
 } from "./dipul-client";
 import {
+  queryDronezonerBbox,
+  queryDronezonerPoint,
+} from "./dronezoner-client";
+import {
   queryGeopfBbox,
   queryGeopfPoint,
 } from "./geopf-client";
@@ -35,11 +39,12 @@ export interface CountryAirspaceProvider {
 
 export function backendLabelForCountry(
   country: CountryId,
-): "servais" | "pansa" | "aimgis" | "dipul" | "geopf" {
+): "servais" | "pansa" | "aimgis" | "dipul" | "geopf" | "dronezoner" {
   if (country === "PL") return "pansa";
   if (country === "CZ") return "aimgis";
   if (country === "DE") return "dipul";
   if (country === "FR") return "geopf";
+  if (country === "DK") return "dronezoner";
   return "servais";
 }
 
@@ -75,6 +80,17 @@ export const franceProvider: CountryAirspaceProvider = {
   },
 };
 
+/** Denmark — Trafikstyrelsen Dronezoner GeoJSON (cached). */
+export const denmarkProvider: CountryAirspaceProvider = {
+  country: "DK",
+  async queryPoint(lat, lng) {
+    return queryDronezonerPoint(lat, lng);
+  },
+  async queryBbox(west, south, east, north, limit = 500) {
+    return queryDronezonerBbox(west, south, east, north, limit);
+  },
+};
+
 /** Czechia — live ANS CR ArcGIS (aimgis.rlp.cz). */
 export const czechiaProvider: CountryAirspaceProvider = {
   country: "CZ",
@@ -100,6 +116,7 @@ export const COUNTRY_PROVIDERS: Record<CountryId, CountryAirspaceProvider> = {
   ES: spainProvider,
   DE: germanyProvider,
   FR: franceProvider,
+  DK: denmarkProvider,
   CZ: czechiaProvider,
   PL: polandProvider,
 };

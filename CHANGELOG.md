@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Denmark live provider via Trafikstyrelsen Dronezoner GeoJSON (`dronezoner-client.ts`, backend label `dronezoner`)
 - France live provider via Géoportail WFS (`geopf-client.ts`, backend label `geopf`)
 - German mail locale (`de`) for verification and password-reset emails
 - French mail locale (`fr`) for verification and password-reset emails
