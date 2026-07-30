@@ -16,7 +16,7 @@ import {
   type ZoneSliceRecord,
   type ZoneSource,
 } from "@canifly/middleware";
-import { backendLabelForCountry, getProvider } from "../geo/providers";
+import { backendLabelForCountry, getProvider, LIVE_ONLY_COUNTRIES } from "../geo/providers";
 import {
   queryPostgisBbox,
   queryPostgisPoint,
@@ -32,7 +32,7 @@ import {
 export interface QueryMeta {
   queryMs: number;
   dataVersion: string | null;
-  backend: "servais" | "pansa" | "aimgis" | "dipul" | "geopf" | "dronezoner" | "foca" | "postgis" | "memory" | "multi";
+  backend: "servais" | "pansa" | "aimgis" | "dipul" | "geopf" | "dronezoner" | "foca" | "anac" | "austro" | "postgis" | "memory" | "multi";
   country?: CountryId | null;
   countries?: CountryId[];
   /** Set when a live provider threw (e.g. missing PANSA_API_KEY). */
@@ -81,7 +81,7 @@ export async function queryPointIntersects(
   const provider = getProvider(country);
   try {
     const live = await provider.queryPoint(lat, lng, altitudeAgl);
-    if (live.length > 0 || country === "PL" || country === "CZ" || country === "DE" || country === "FR" || country === "DK" || country === "CH") {
+    if (live.length > 0 || LIVE_ONLY_COUNTRIES.has(country)) {
       return {
         zones: live,
         meta: {
@@ -98,7 +98,7 @@ export async function queryPointIntersects(
       `[queryPointIntersects] ${country} provider failed, falling back`,
       err,
     );
-    if (country === "PL" || country === "CZ" || country === "DE" || country === "FR" || country === "DK" || country === "CH") {
+    if (LIVE_ONLY_COUNTRIES.has(country)) {
       return {
         zones: [],
         meta: {
@@ -321,7 +321,7 @@ async function queryZonesInBboxLive(
           return;
         }
         // Empty success still counts as the live/primary backend for PL/CZ.
-        if (country === "PL" || country === "CZ" || country === "DE" || country === "FR" || country === "DK" || country === "CH") {
+        if (LIVE_ONLY_COUNTRIES.has(country)) {
           backends.add(backendLabelForCountry(country));
         }
       } catch (err) {
@@ -330,7 +330,7 @@ async function queryZonesInBboxLive(
           `[queryZonesInBbox] ${country} provider failed, falling back`,
           err,
         );
-        if (country === "PL" || country === "CZ" || country === "DE" || country === "FR" || country === "DK" || country === "CH") {
+        if (LIVE_ONLY_COUNTRIES.has(country)) {
           backends.add(backendLabelForCountry(country));
           providerError = message;
         }
@@ -364,26 +364,25 @@ async function queryZonesInBboxLive(
   }
 
   const backendList = [...backends];
+  const known: QueryMeta["backend"][] = [
+    "pansa",
+    "servais",
+    "aimgis",
+    "dipul",
+    "geopf",
+    "dronezoner",
+    "foca",
+    "anac",
+    "austro",
+    "postgis",
+    "memory",
+  ];
   const backend: QueryMeta["backend"] =
     backendList.length > 1
       ? "multi"
-      : backendList[0] === "pansa"
-        ? "pansa"
-        : backendList[0] === "servais"
-          ? "servais"
-          : backendList[0] === "aimgis"
-            ? "aimgis"
-            : backendList[0] === "dipul"
-              ? "dipul"
-              : backendList[0] === "geopf"
-                ? "geopf"
-                : backendList[0] === "dronezoner"
-                  ? "dronezoner"
-                  : backendList[0] === "foca"
-                    ? "foca"
-                  : backendList[0] === "postgis"
-                    ? "postgis"
-                    : "memory";
+      : known.includes(backendList[0] as QueryMeta["backend"])
+        ? (backendList[0] as QueryMeta["backend"])
+        : "memory";
 
   return {
     collection: { type: "FeatureCollection", features },

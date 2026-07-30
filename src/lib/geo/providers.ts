@@ -8,6 +8,14 @@ import {
   queryAnscrPoint,
 } from "./anscr-client";
 import {
+  queryAnacBbox,
+  queryAnacPoint,
+} from "./anac-client";
+import {
+  queryAustroBbox,
+  queryAustroPoint,
+} from "./austro-client";
+import {
   queryDipulBbox,
   queryDipulPoint,
 } from "./dipul-client";
@@ -41,15 +49,38 @@ export interface CountryAirspaceProvider {
   ): Promise<GeoJSON.FeatureCollection>;
 }
 
-export function backendLabelForCountry(
-  country: CountryId,
-): "servais" | "pansa" | "aimgis" | "dipul" | "geopf" | "dronezoner" | "foca" {
+export type LiveBackendLabel =
+  | "servais"
+  | "pansa"
+  | "aimgis"
+  | "dipul"
+  | "geopf"
+  | "dronezoner"
+  | "foca"
+  | "anac"
+  | "austro";
+
+/** Live-only countries (no PostGIS/memory fallback). */
+export const LIVE_ONLY_COUNTRIES = new Set<CountryId>([
+  "PL",
+  "CZ",
+  "DE",
+  "FR",
+  "DK",
+  "CH",
+  "PT",
+  "AT",
+]);
+
+export function backendLabelForCountry(country: CountryId): LiveBackendLabel {
   if (country === "PL") return "pansa";
   if (country === "CZ") return "aimgis";
   if (country === "DE") return "dipul";
   if (country === "FR") return "geopf";
   if (country === "DK") return "dronezoner";
   if (country === "CH") return "foca";
+  if (country === "PT") return "anac";
+  if (country === "AT") return "austro";
   return "servais";
 }
 
@@ -63,7 +94,6 @@ export const spainProvider: CountryAirspaceProvider = {
   },
 };
 
-/** Germany — live dipul WFS (uas-betrieb.de). */
 export const germanyProvider: CountryAirspaceProvider = {
   country: "DE",
   async queryPoint(lat, lng) {
@@ -74,7 +104,6 @@ export const germanyProvider: CountryAirspaceProvider = {
   },
 };
 
-/** France — live Géoportail WFS (data.geopf.fr). */
 export const franceProvider: CountryAirspaceProvider = {
   country: "FR",
   async queryPoint(lat, lng) {
@@ -85,7 +114,6 @@ export const franceProvider: CountryAirspaceProvider = {
   },
 };
 
-/** Denmark — Trafikstyrelsen Dronezoner GeoJSON (cached). */
 export const denmarkProvider: CountryAirspaceProvider = {
   country: "DK",
   async queryPoint(lat, lng) {
@@ -96,7 +124,6 @@ export const denmarkProvider: CountryAirspaceProvider = {
   },
 };
 
-/** Switzerland — FOCA SwissUASGeozones on geo.admin.ch (cached). */
 export const switzerlandProvider: CountryAirspaceProvider = {
   country: "CH",
   async queryPoint(lat, lng) {
@@ -107,7 +134,26 @@ export const switzerlandProvider: CountryAirspaceProvider = {
   },
 };
 
-/** Czechia — live ANS CR ArcGIS (aimgis.rlp.cz). */
+export const portugalProvider: CountryAirspaceProvider = {
+  country: "PT",
+  async queryPoint(lat, lng) {
+    return queryAnacPoint(lat, lng);
+  },
+  async queryBbox(west, south, east, north, limit = 500) {
+    return queryAnacBbox(west, south, east, north, limit);
+  },
+};
+
+export const austriaProvider: CountryAirspaceProvider = {
+  country: "AT",
+  async queryPoint(lat, lng) {
+    return queryAustroPoint(lat, lng);
+  },
+  async queryBbox(west, south, east, north, limit = 500) {
+    return queryAustroBbox(west, south, east, north, limit);
+  },
+};
+
 export const czechiaProvider: CountryAirspaceProvider = {
   country: "CZ",
   async queryPoint(lat, lng) {
@@ -134,6 +180,8 @@ export const COUNTRY_PROVIDERS: Record<CountryId, CountryAirspaceProvider> = {
   FR: franceProvider,
   DK: denmarkProvider,
   CH: switzerlandProvider,
+  PT: portugalProvider,
+  AT: austriaProvider,
   CZ: czechiaProvider,
   PL: polandProvider,
 };

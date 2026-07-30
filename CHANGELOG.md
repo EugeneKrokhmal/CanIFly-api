@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Added
+- Portugal live provider via ANAC ED-269 JSON (`anac-client.ts`, backend label `anac`)
+- Austria live provider via Austro Control ED-269 ZIP (`austro-client.ts`, backend label `austro`)
+- Shared ED-269 national cache helper (`ed269-national-cache.ts`)
 - Switzerland live provider via FOCA SwissUASGeozones (`foca-client.ts`, backend label `foca`)
 - Denmark live provider via Trafikstyrelsen Dronezoner GeoJSON (`dronezoner-client.ts`, backend label `dronezoner`)
 - France live provider via Géoportail WFS (`geopf-client.ts`, backend label `geopf`)
