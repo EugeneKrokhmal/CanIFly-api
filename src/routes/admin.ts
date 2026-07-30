@@ -16,6 +16,10 @@ import {
   listServaisLayers,
 } from "../lib/geo/enaire-client";
 import { FIXTURE_ZONES } from "../lib/geo/fixtures";
+import {
+  seedPilots,
+  seedPilotsPlan,
+} from "../lib/seed/pilots";
 
 export const adminRoutes = new Hono();
 
@@ -23,6 +27,10 @@ const bodySchema = z.object({
   sources: z
     .array(z.enum(["fixtures", "ed318", "servais"]))
     .default(["fixtures", "ed318"]),
+});
+
+const seedBodySchema = z.object({
+  force: z.boolean().optional().default(false),
 });
 
 function authorize(c: { req: { header: (name: string) => string | undefined } }): boolean {
@@ -140,4 +148,44 @@ adminRoutes.get("/ingest", async (c) => {
     databaseAvailable: dbUp,
     ...total,
   });
+});
+
+/** Demo pilots + scenic fly spots (ES / CZ / PL). Same auth as /ingest. */
+adminRoutes.post("/seed-pilots", async (c) => {
+  if (!authorize(c)) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  try {
+    const json = (await c.req.json().catch(() => ({}))) as unknown;
+    const parsed = seedBodySchema.safeParse(json);
+    if (!parsed.success) {
+      return c.json(
+        { error: "Invalid body", details: parsed.error.flatten() },
+        400,
+      );
+    }
+
+    if (!(await isDatabaseAvailable())) {
+      return c.json({ error: "Database unavailable" }, 503);
+    }
+
+    await ensurePostgisSchema();
+    const result = await seedPilots({ force: parsed.data.force });
+
+    return c.json({
+      ok: true,
+      plan: seedPilotsPlan(),
+      ...result,
+    });
+  } catch (err) {
+    console.error("[admin/seed-pilots]", err);
+    return c.json(
+      {
+        error: "Seed failed",
+        message: err instanceof Error ? err.message : "unknown",
+      },
+      500,
+    );
+  }
 });
