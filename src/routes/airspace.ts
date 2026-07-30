@@ -1,24 +1,18 @@
 import { Hono } from "hono";
 import {
-  SPAIN_BOUNDS,
+  COUNTRIES,
+  coverageBounds,
+  inCoverageHint,
   openCategoryCeiling,
   parseLocale,
   pointStatusQuerySchema,
+  resolveCountry,
   type DroneProfile,
 } from "@canifly/middleware";
 import { ensureDemoDataLoaded } from "../lib/db/bootstrap";
 import { evaluateAirspaceStatus } from "../lib/db/queries";
 
 export const airspaceRoutes = new Hono();
-
-function inSpainHint(lat: number, lng: number): boolean {
-  return (
-    lat >= SPAIN_BOUNDS.minLat &&
-    lat <= SPAIN_BOUNDS.maxLat &&
-    lng >= SPAIN_BOUNDS.minLng &&
-    lng <= SPAIN_BOUNDS.maxLng
-  );
-}
 
 airspaceRoutes.get("/status", async (c) => {
   try {
@@ -45,11 +39,12 @@ airspaceRoutes.get("/status", async (c) => {
       maxAltitudeAgl: openCategoryCeiling(altitudeAgl),
     };
 
-    if (!inSpainHint(lat, lng)) {
+    if (!inCoverageHint(lat, lng)) {
       return c.json(
         {
-          error: "Coordinates appear outside Spain coverage bounds",
-          bounds: SPAIN_BOUNDS,
+          error: "Coordinates appear outside current coverage bounds",
+          bounds: coverageBounds(),
+          countries: Object.keys(COUNTRIES),
         },
         400,
       );
@@ -62,7 +57,13 @@ airspaceRoutes.get("/status", async (c) => {
       profile.maxAltitudeAgl,
     );
 
-    return c.json({ ...result, meta });
+    return c.json({
+      ...result,
+      meta: {
+        ...meta,
+        country: meta.country ?? resolveCountry(lat, lng),
+      },
+    });
   } catch (err) {
     console.error("[api/airspace/status]", err);
     return c.json({ error: "Failed to evaluate airspace status" }, 500);
