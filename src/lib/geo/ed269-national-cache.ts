@@ -15,6 +15,10 @@ import {
   type UasZoneGeometry,
   type ZoneSource,
 } from "@canifly/middleware";
+import {
+  ensureHeapForHeavyCache,
+  registerGeoCacheClearer,
+} from "./memory-guard";
 
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_MAP_BBOX_DEG = 3.5;
@@ -222,9 +226,24 @@ export function createEd269NationalClient(opts: {
   let cache: { fetchedAt: number; zones: UasZoneFeature[] } | null = null;
   let inflight: Promise<UasZoneFeature[]> | null = null;
 
+  registerGeoCacheClearer(() => {
+    cache = null;
+    inflight = null;
+  });
+
   async function getZones(): Promise<UasZoneFeature[]> {
     const now = Date.now();
     if (cache && now - cache.fetchedAt < CACHE_TTL_MS) return cache.zones;
+    const stale = cache;
+    if (!ensureHeapForHeavyCache(`${opts.source}:${opts.country}`)) {
+      if (stale) {
+        cache = stale;
+        return stale.zones;
+      }
+      throw new Error(
+        `heap limit — cannot load ${opts.country} national zones`,
+      );
+    }
     if (!inflight) {
       inflight = opts
         .fetchZones()

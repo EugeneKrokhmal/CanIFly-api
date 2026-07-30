@@ -14,6 +14,10 @@ import {
   type UasZoneGeometry,
   type UasZonesFile,
 } from "@canifly/middleware";
+import {
+  ensureHeapForHeavyCache,
+  registerGeoCacheClearer,
+} from "./memory-guard";
 
 const FOCA_GEOJSON_4326 =
   "https://data.geo.admin.ch/ch.bazl.einschraenkungen-drohnen/einschraenkungen-drohnen/einschraenkungen-drohnen_4326.json";
@@ -41,6 +45,11 @@ type CacheEntry = {
 
 let cache: CacheEntry | null = null;
 let inflight: Promise<UasZoneFeature[]> | null = null;
+
+registerGeoCacheClearer(() => {
+  cache = null;
+  inflight = null;
+});
 
 function isTimeout(err: unknown): boolean {
   return (
@@ -123,6 +132,17 @@ async function getZones(): Promise<UasZoneFeature[]> {
   const now = Date.now();
   if (cache && now - cache.fetchedAt < CACHE_TTL_MS) {
     return cache.zones;
+  }
+  const stale = cache;
+  if (!ensureHeapForHeavyCache("foca:CH")) {
+    if (stale) {
+      cache = stale;
+      return stale.zones;
+    }
+    throw new FocaFetchError(
+      "heap limit — cannot load FOCA national zones",
+      FOCA_GEOJSON_4326,
+    );
   }
   if (!inflight) {
     inflight = fetchNationalZones()

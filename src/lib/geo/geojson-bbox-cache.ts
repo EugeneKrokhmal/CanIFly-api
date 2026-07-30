@@ -2,6 +2,10 @@
  * Shared helpers for national GeoJSON caches (map bbox queries).
  * Point/status queries stay on live upstream APIs.
  */
+import {
+  ensureHeapForHeavyCache,
+  registerGeoCacheClearer,
+} from "./memory-guard";
 
 export const NATIONAL_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
@@ -76,7 +80,9 @@ export class TimedFeatureCache {
   private entry: { fetchedAt: number; features: GeoJSON.Feature[] } | null = null;
   private inflight: Promise<GeoJSON.Feature[]> | null = null;
 
-  constructor(private readonly ttlMs: number) {}
+  constructor(private readonly ttlMs: number) {
+    registerGeoCacheClearer(() => this.clear());
+  }
 
   async get(
     fetchFeatures: () => Promise<GeoJSON.Feature[]>,
@@ -84,6 +90,9 @@ export class TimedFeatureCache {
     const now = Date.now();
     if (this.entry && now - this.entry.fetchedAt < this.ttlMs) {
       return this.entry.features;
+    }
+    if (!ensureHeapForHeavyCache("TimedFeatureCache")) {
+      throw new Error("heap soft limit — skip national map cache");
     }
     if (!this.inflight) {
       this.inflight = fetchFeatures()
@@ -116,7 +125,7 @@ export class TimedFeatureCache {
 }
 
 const VIEWPORT_CACHE_TTL_MS = 30 * 60 * 1000;
-const VIEWPORT_CACHE_MAX = 48;
+const VIEWPORT_CACHE_MAX = 24;
 
 export function roundedBboxKey(
   west: number,
@@ -139,7 +148,14 @@ export class ViewportLayerCache {
   constructor(
     private readonly ttlMs = VIEWPORT_CACHE_TTL_MS,
     private readonly maxEntries = VIEWPORT_CACHE_MAX,
-  ) {}
+  ) {
+    registerGeoCacheClearer(() => this.clear());
+  }
+
+  clear(): void {
+    this.entries.clear();
+    this.inflight.clear();
+  }
 
   async get(
     layerKey: string,

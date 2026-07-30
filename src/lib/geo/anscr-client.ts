@@ -17,6 +17,7 @@ import {
   TimedFeatureCache,
   ViewportLayerCache,
 } from "./geojson-bbox-cache";
+import { nationalMapWarmEnabled } from "./memory-guard";
 
 const AIMGIS_BASE = "https://aimgis.rlp.cz/server/rest/services";
 
@@ -656,13 +657,16 @@ export async function queryAnscrBbox(
     }),
   );
 
-  void Promise.all(
-    MAP_LAYERS.map(({ service, layerId }) =>
-      nationalLayerCache(service, layerId)
-        .get(() => fetchLayerNational(service, layerId))
-        .catch(() => []),
-    ),
-  ).catch(() => undefined);
+  // Opt-in only — CZ national layer warm OOMs small hosts alongside FOCA/DK/PT/AT.
+  if (nationalMapWarmEnabled()) {
+    void Promise.all(
+      MAP_LAYERS.map(({ service, layerId }) =>
+        nationalLayerCache(service, layerId)
+          .get(() => fetchLayerNational(service, layerId))
+          .catch(() => []),
+      ),
+    ).catch(() => undefined);
+  }
 
   return {
     type: "FeatureCollection",

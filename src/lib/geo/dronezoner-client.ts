@@ -13,6 +13,10 @@ import {
   type MatchedZone,
   type UasRestriction,
 } from "@canifly/middleware";
+import {
+  ensureHeapForHeavyCache,
+  registerGeoCacheClearer,
+} from "./memory-guard";
 
 const DRONEZONER_GEOJSON =
   "https://trafikstyrelsen.maps.arcgis.com/sharing/rest/content/items/980697acd04d4a9bb1fd34bbefab924a/data";
@@ -59,6 +63,11 @@ type CacheEntry = {
 let cache: CacheEntry | null = null;
 let inflight: Promise<GeoJSON.Feature[]> | null = null;
 
+registerGeoCacheClearer(() => {
+  cache = null;
+  inflight = null;
+});
+
 function isTimeout(err: unknown): boolean {
   return (
     (err instanceof DOMException && err.name === "TimeoutError") ||
@@ -98,6 +107,17 @@ async function getFeatures(): Promise<GeoJSON.Feature[]> {
   const now = Date.now();
   if (cache && now - cache.fetchedAt < CACHE_TTL_MS) {
     return cache.features;
+  }
+  const stale = cache;
+  if (!ensureHeapForHeavyCache("dronezoner:DK")) {
+    if (stale) {
+      cache = stale;
+      return stale.features;
+    }
+    throw new DronezonerFetchError(
+      "heap limit — cannot load Dronezoner national GeoJSON",
+      DRONEZONER_GEOJSON,
+    );
   }
   if (!inflight) {
     inflight = fetchNationalGeoJson()

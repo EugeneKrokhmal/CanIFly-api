@@ -15,6 +15,7 @@ import { trafficRoutes } from "./routes/traffic";
 import { weatherRoutes } from "./routes/weather";
 import { zonesRoutes } from "./routes/zones";
 import { isDatabaseAvailable } from "./lib/db/client";
+import { memoryHealth } from "./lib/geo/memory-guard";
 
 config({ path: ".env" });
 
@@ -37,6 +38,7 @@ app.get("/health", async (c) => {
     database: db ? "up" : "down",
     /** Whether Poland PANSA live queries can run (key present; not validated). */
     pansaConfigured: Boolean(process.env.PANSA_API_KEY?.trim()),
+    memory: memoryHealth(),
   });
 });
 

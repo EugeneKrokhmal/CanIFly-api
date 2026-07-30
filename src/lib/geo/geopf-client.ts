@@ -17,6 +17,7 @@ import {
   TimedFeatureCache,
   ViewportLayerCache,
 } from "./geojson-bbox-cache";
+import { nationalMapWarmEnabled } from "./memory-guard";
 
 const GEOPF_WFS = "https://data.geopf.fr/wfs/ows";
 const TYPE_NAME =
@@ -347,7 +348,10 @@ export async function queryGeopfBbox(
       clamped.north,
       () => fetchViewportMapFeatures(clamped, limit),
     );
-    void nationalMapCache.get(fetchNationalMapFeatures).catch(() => undefined);
+    // Opt-in only — FR national warm (~thousands of features) OOMs small hosts.
+    if (nationalMapWarmEnabled() && !nationalMapCache.isWarm()) {
+      void nationalMapCache.get(fetchNationalMapFeatures).catch(() => undefined);
+    }
     return { type: "FeatureCollection", features: features.slice(0, limit) };
   } catch (err) {
     if (
