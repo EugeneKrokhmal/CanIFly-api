@@ -24,6 +24,8 @@ export interface QueryMeta {
   backend: "servais" | "pansa" | "postgis" | "memory" | "multi";
   country?: CountryId | null;
   countries?: CountryId[];
+  /** Set when a live provider threw (e.g. missing PANSA_API_KEY). */
+  providerError?: string;
 }
 
 interface RawSliceRow {
@@ -162,10 +164,23 @@ export async function queryPointIntersects(
       };
     }
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     console.warn(
       `[queryPointIntersects] ${country} provider failed, falling back`,
       err,
     );
+    if (country === "PL") {
+      return {
+        zones: [],
+        meta: {
+          queryMs: Math.round(performance.now() - started),
+          dataVersion: null,
+          backend: "pansa",
+          country,
+          providerError: message,
+        },
+      };
+    }
   }
 
   if (country === "ES") {
@@ -367,6 +382,7 @@ export async function queryZonesInBbox(
   const perCountryLimit = Math.max(50, Math.ceil(limit / countries.length));
   const merged: GeoJSON.Feature[] = [];
   const backends = new Set<string>();
+  let providerError: string | undefined;
 
   await Promise.all(
     countries.map(async (country) => {
@@ -385,11 +401,18 @@ export async function queryZonesInBbox(
           merged.push(...filterCollection(live, profile, altitudeAgl));
           return;
         }
+        // Empty success still counts as the live backend for PL.
+        if (country === "PL") backends.add("pansa");
       } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
         console.warn(
           `[queryZonesInBbox] ${country} provider failed, falling back`,
           err,
         );
+        if (country === "PL") {
+          backends.add("pansa");
+          providerError = message;
+        }
       }
 
       if (country === "ES") {
@@ -439,6 +462,7 @@ export async function queryZonesInBbox(
       dataVersion: new Date().toISOString().slice(0, 10),
       backend,
       countries,
+      ...(providerError ? { providerError } : {}),
     },
   };
 }

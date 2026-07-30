@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.2.2] — 2026-07-30
+
+### Added
+- `/health` reports `pansaConfigured` (key present, not the secret)
+- Poland provider failures surface as `meta.providerError` instead of a silent fake clear
+
 ## [0.2.1] — 2026-07-30
 
 ### Added

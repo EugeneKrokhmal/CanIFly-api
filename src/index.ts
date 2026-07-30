@@ -35,6 +35,8 @@ app.get("/health", async (c) => {
     ok: true,
     service: "canifly-api",
     database: db ? "up" : "down",
+    /** Whether Poland PANSA live queries can run (key present; not validated). */
+    pansaConfigured: Boolean(process.env.PANSA_API_KEY?.trim()),
   });
 });
 
