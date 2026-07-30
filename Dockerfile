@@ -6,9 +6,12 @@ RUN apt-get update \
   && apt-get install -y --no-install-recommends git ca-certificates python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
-# Build shared middleware from GitHub (dist/ is not committed).
+# Pin middleware commit so Docker cache invalidates when schemas change.
+ARG MIDDLEWARE_REF=58662b07d552710311fdd0f1105f0a6806b084ac
 RUN git clone --depth 1 https://github.com/EugeneKrokhmal/CanIFly-middleware.git /app/CanIFly-middleware \
   && cd /app/CanIFly-middleware \
+  && git fetch --depth 1 origin ${MIDDLEWARE_REF} \
+  && git checkout ${MIDDLEWARE_REF} \
   && npm install \
   && npm run build
 
