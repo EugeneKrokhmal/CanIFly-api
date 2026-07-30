@@ -2,7 +2,6 @@ import { getDb, isDatabaseAvailable } from "./client";
 import { memoryZoneStore } from "./memory-store";
 import {
   classifyStatus,
-  countriesForBbox,
   filterByProfile,
   filterForMap,
   geoJsonToWkt,
@@ -284,9 +283,12 @@ async function queryZonesInBboxLive(
   limit = 500,
 ): Promise<{ collection: GeoJSON.FeatureCollection; meta: QueryMeta }> {
   const started = performance.now();
-  const countries = countriesForBbox({ west, south, east, north });
+  // One country per viewport — center point, not every overlapping AABB (faster at borders).
+  const centerLat = (south + north) / 2;
+  const centerLng = (west + east) / 2;
+  const country = resolveCountry(centerLat, centerLng);
 
-  if (countries.length === 0) {
+  if (!country) {
     return {
       collection: { type: "FeatureCollection", features: [] },
       meta: {
@@ -294,106 +296,69 @@ async function queryZonesInBboxLive(
         dataVersion: null,
         backend: "memory",
         countries: [],
+        country: null,
       },
     };
   }
 
-  const perCountryLimit = Math.max(50, Math.ceil(limit / countries.length));
-  const merged: GeoJSON.Feature[] = [];
-  const backends = new Set<string>();
-  let providerError: string | undefined;
+  const countries = [country];
 
-  await Promise.all(
-    countries.map(async (country) => {
-      const provider = getProvider(country);
-      try {
-        const live = await provider.queryBbox(
-          west,
-          south,
-          east,
-          north,
-          perCountryLimit,
-          altitudeAgl,
-        );
-        if (live.features.length > 0) {
-          backends.add(backendLabelForCountry(country));
-          merged.push(...filterCollection(live, profile, altitudeAgl));
-          return;
-        }
-        // Empty success still counts as the live/primary backend for PL/CZ.
-        if (LIVE_ONLY_COUNTRIES.has(country)) {
-          backends.add(backendLabelForCountry(country));
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.warn(
-          `[queryZonesInBbox] ${country} provider failed, falling back`,
-          err,
-        );
-        if (LIVE_ONLY_COUNTRIES.has(country)) {
-          backends.add(backendLabelForCountry(country));
-          providerError = message;
-        }
-      }
-      if (country === "ES") {
-        const fallback = await querySpainBboxFallback(
-          west,
-          south,
-          east,
-          north,
-          profile,
-          altitudeAgl,
-          perCountryLimit,
-          started,
-        );
-        backends.add(fallback.meta.backend);
-        merged.push(...fallback.collection.features);
-      }
-    }),
-  );
-
-  const seen = new Set<string>();
-  const features: GeoJSON.Feature[] = [];
-  for (const f of merged) {
-    const p = (f.properties ?? {}) as { identifier?: string; country?: string };
-    const key = `${p.country ?? ""}:${p.identifier ?? ""}`;
-    if (p.identifier && seen.has(key)) continue;
-    if (p.identifier) seen.add(key);
-    features.push(f);
-    if (features.length >= limit) break;
+  // Spain map: PostGIS first (synced servAIS), live servAIS only when PostGIS is empty.
+  if (country === "ES") {
+    const postgis = await querySpainBboxFallback(
+      west,
+      south,
+      east,
+      north,
+      profile,
+      altitudeAgl,
+      limit,
+      started,
+    );
+    if (postgis.collection.features.length > 0) {
+      return postgis;
+    }
   }
 
-  const backendList = [...backends];
-  const known: QueryMeta["backend"][] = [
-    "pansa",
-    "servais",
-    "aimgis",
-    "dipul",
-    "geopf",
-    "dronezoner",
-    "foca",
-    "anac",
-    "austro",
-    "postgis",
-    "memory",
-  ];
-  const backend: QueryMeta["backend"] =
-    backendList.length > 1
-      ? "multi"
-      : known.includes(backendList[0] as QueryMeta["backend"])
-        ? (backendList[0] as QueryMeta["backend"])
-        : "memory";
-
-  return {
-    collection: { type: "FeatureCollection", features },
-    meta: {
-      queryMs: Math.round(performance.now() - started),
-      dataVersion: new Date().toISOString().slice(0, 10),
-      backend,
-      countries,
-      ...(providerError ? { providerError } : {}),
-    },
-  };
+  const provider = getProvider(country);
+  try {
+    const live = await provider.queryBbox(
+      west,
+      south,
+      east,
+      north,
+      limit,
+      altitudeAgl,
+    );
+    const features = filterCollection(live, profile, altitudeAgl).slice(0, limit);
+    return {
+      collection: { type: "FeatureCollection", features },
+      meta: {
+        queryMs: Math.round(performance.now() - started),
+        dataVersion: new Date().toISOString().slice(0, 10),
+        backend: backendLabelForCountry(country),
+        country,
+        countries,
+      },
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(
+      `[queryZonesInBbox] ${country} provider failed`,
+      err,
+    );
+    return {
+      collection: { type: "FeatureCollection", features: [] },
+      meta: {
+        queryMs: Math.round(performance.now() - started),
+        dataVersion: null,
+        backend: backendLabelForCountry(country),
+        country,
+        countries,
+        providerError: message,
+      },
+    };
+  }
 }
 
 export async function replaceSlicesForSource(

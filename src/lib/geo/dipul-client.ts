@@ -13,6 +13,7 @@ import {
   type MatchedZone,
   type UasRestriction,
 } from "@canifly/middleware";
+import { ViewportLayerCache } from "./geojson-bbox-cache";
 
 const DIPUL_WFS = "https://uas-betrieb.de/geoservices/dipul/wfs";
 
@@ -59,6 +60,8 @@ const STATUS_TYPES: readonly string[] = [
 ];
 
 const MAP_TYPES = STATUS_TYPES.filter((t) => t !== "dipul:wohngrundstuecke");
+
+const viewportLayerCache = new ViewportLayerCache();
 
 /** Open-category hard no-fly / consent-required facility types (§ 21h Abs. 3). */
 const PROHIBITED_TYPES = new Set([
@@ -342,7 +345,7 @@ export async function queryDipulPoint(
 }
 
 /**
- * Live bbox query for map polygons.
+ * Map bbox — live WFS per layer with viewport cache (30 min). Point stays live WFS.
  */
 export async function queryDipulBbox(
   west: number,
@@ -356,50 +359,63 @@ export async function queryDipulBbox(
     return { type: "FeatureCollection", features: [] };
   }
 
-  const features: GeoJSON.Feature[] = [];
   const perLayer = Math.max(15, Math.floor(limit / MAP_TYPES.length));
+  const merged: GeoJSON.Feature[] = [];
   const seen = new Set<string>();
 
   await Promise.all(
     MAP_TYPES.map(async (typeName) => {
-      const url = buildBboxUrl(
-        typeName,
-        clamped.west,
-        clamped.south,
-        clamped.east,
-        clamped.north,
-        perLayer,
-      );
+      let layerFeatures: GeoJSON.Feature[] = [];
       try {
-        const fc = await fetchGeoJson(url, 8_000);
-        for (const feature of fc.features ?? []) {
-          const zone = propsToMatchedZone(
-            (feature.properties ?? {}) as DipulProps,
-          );
-          if (!zone || !feature.geometry) continue;
-          const key = `${zone.identifier}:${zone.name}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          features.push({
-            type: "Feature",
-            id: zone.identifier,
-            geometry: feature.geometry,
-            properties: {
-              identifier: zone.identifier,
-              name: zone.name,
-              restriction: zone.restriction,
-              reason: zone.reason,
-              source: zone.source,
-              country: "DE",
-              lowerLimitM: zone.lowerLimitM,
-              upperLimitM: zone.upperLimitM,
-              lowerRef: zone.lowerRef,
-              upperRef: zone.upperRef,
-              message: zone.message,
-              mapStatus: zoneVisualStatus(zone),
-            },
-          });
-        }
+        layerFeatures = await viewportLayerCache.get(
+          typeName,
+          clamped.west,
+          clamped.south,
+          clamped.east,
+          clamped.north,
+          async () => {
+            const url = buildBboxUrl(
+              typeName,
+              clamped.west,
+              clamped.south,
+              clamped.east,
+              clamped.north,
+              perLayer,
+            );
+            const fc = await fetchGeoJson(url, 8_000);
+            const out: GeoJSON.Feature[] = [];
+            const layerSeen = new Set<string>();
+            for (const feature of fc.features ?? []) {
+              const zone = propsToMatchedZone(
+                (feature.properties ?? {}) as DipulProps,
+              );
+              if (!zone || !feature.geometry) continue;
+              const key = `${zone.identifier}:${zone.name}`;
+              if (layerSeen.has(key)) continue;
+              layerSeen.add(key);
+              out.push({
+                type: "Feature",
+                id: zone.identifier,
+                geometry: feature.geometry,
+                properties: {
+                  identifier: zone.identifier,
+                  name: zone.name,
+                  restriction: zone.restriction,
+                  reason: zone.reason,
+                  source: zone.source,
+                  country: "DE",
+                  lowerLimitM: zone.lowerLimitM,
+                  upperLimitM: zone.upperLimitM,
+                  lowerRef: zone.lowerRef,
+                  upperRef: zone.upperRef,
+                  message: zone.message,
+                  mapStatus: zoneVisualStatus(zone),
+                },
+              });
+            }
+            return out;
+          },
+        );
       } catch (err) {
         if (
           isTimeout(err) ||
@@ -409,9 +425,20 @@ export async function queryDipulBbox(
         } else {
           console.warn(`[dipul] ${typeName} bbox failed`, err);
         }
+        return;
+      }
+      for (const f of layerFeatures) {
+        const p = (f.properties ?? {}) as { identifier?: string; name?: string };
+        const key = `${p.identifier ?? ""}:${p.name ?? ""}`;
+        if (key !== ":" && seen.has(key)) continue;
+        if (key !== ":") seen.add(key);
+        merged.push(f);
       }
     }),
   );
 
-  return { type: "FeatureCollection", features: features.slice(0, limit) };
+  return {
+    type: "FeatureCollection",
+    features: merged.slice(0, limit),
+  };
 }

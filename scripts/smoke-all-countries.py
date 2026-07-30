@@ -62,12 +62,13 @@ CASES = [
 ]
 
 BBOXES = [
-    {"id": "bbox-ES-Madrid", "west": -3.8, "south": 40.35, "east": -3.6, "north": 40.48, "backend": {"servais", "postgis", "memory", "multi"}, "min_features": 1},
-    {"id": "bbox-DE-Berlin", "west": 13.3, "south": 52.45, "east": 13.5, "north": 52.55, "backend": {"dipul", "multi"}, "min_features": 1},
-    {"id": "bbox-FR-Paris", "west": 2.25, "south": 48.80, "east": 2.45, "north": 48.90, "backend": {"geopf", "multi"}, "min_features": 1},
-    {"id": "bbox-CZ-Prague", "west": 14.3, "south": 50.0, "east": 14.55, "north": 50.15, "backend": {"aimgis", "multi"}, "min_features": 1},
-    {"id": "bbox-PL-Warsaw", "west": 20.9, "south": 52.15, "east": 21.1, "north": 52.3, "backend": {"pansa", "multi"}, "min_features": 1},
-    {"id": "bbox-DE-FR-Strasbourg", "west": 7.7, "south": 48.52, "east": 7.85, "north": 48.62, "backend": {"multi", "dipul", "geopf"}, "min_features": 1},
+    {"id": "bbox-ES-Madrid", "west": -3.8, "south": 40.35, "east": -3.6, "north": 40.48, "backend": {"postgis", "servais", "memory"}, "min_features": 1},
+    {"id": "bbox-DE-Berlin", "west": 13.3, "south": 52.45, "east": 13.5, "north": 52.55, "backend": {"dipul"}, "min_features": 1},
+    {"id": "bbox-FR-Paris", "west": 2.25, "south": 48.80, "east": 2.45, "north": 48.90, "backend": {"geopf"}, "min_features": 1},
+    {"id": "bbox-CZ-Prague", "west": 14.3, "south": 50.0, "east": 14.55, "north": 50.15, "backend": {"aimgis"}, "min_features": 1},
+    {"id": "bbox-PL-Warsaw", "west": 20.9, "south": 52.15, "east": 21.1, "north": 52.3, "backend": {"pansa"}, "min_features": 1},
+    # Viewport center is France (Strasbourg) — single country, not multi-provider fan-out.
+    {"id": "bbox-DE-FR-Strasbourg", "west": 7.7, "south": 48.52, "east": 7.85, "north": 48.62, "backend": {"geopf"}, "min_features": 1},
 ]
 
 RESOLVE_CASES = [

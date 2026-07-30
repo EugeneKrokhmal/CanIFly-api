@@ -118,6 +118,21 @@ let typeCache: { byName: Map<string, PansaTypeInfo>; expiresAt: number } | null 
   null;
 const TYPE_CACHE_MS = 6 * 60 * 60 * 1000;
 
+const FILTERED_CACHE_TTL_MS = 30 * 60 * 1000;
+const filteredCache = new Map<
+  string,
+  { expiresAt: number; raws: PansaZoneRaw[] }
+>();
+
+function filteredCacheKey(
+  lat: number,
+  lon: number,
+  rangeM: number,
+  maxHeightM: number,
+): string {
+  return `${lat.toFixed(2)}:${lon.toFixed(2)}:${Math.round(rangeM / 5000)}:${maxHeightM}`;
+}
+
 async function getPansaTypeMap(): Promise<Map<string, PansaTypeInfo>> {
   if (typeCache && typeCache.expiresAt > Date.now()) {
     return typeCache.byName;
@@ -480,6 +495,52 @@ export async function pansaRawToMatchedZone(
   };
 }
 
+/** Map path — skip async type-catalog lookup per zone. */
+function pansaRawToFeatureFast(raw: PansaZoneRaw): GeoJSON.Feature | null {
+  const identifier = String(raw.name ?? raw.uid ?? "").trim();
+  if (!identifier) return null;
+  const geom = raw.geojson;
+  if (!geom || (geom.type !== "Polygon" && geom.type !== "MultiPolygon")) {
+    return null;
+  }
+  const lower = Number(raw.min ?? 0);
+  const upper = Number(raw.max ?? 120);
+  const message = pickDescription(raw.description);
+  const activity = formatPansaActivity(raw.acts);
+  const body =
+    activity && message
+      ? `${activity}\n\n${message}`
+      : activity ?? message ?? undefined;
+
+  return {
+    type: "Feature",
+    geometry: geom,
+    properties: {
+      identifier,
+      name: String(raw.othername ?? raw.name ?? identifier),
+      restriction: pansaToRestriction(raw),
+      reason: pansaReasons(raw),
+      source: "pansa",
+      country: "PL",
+      zoneType: String(raw.type ?? ""),
+      activeH24: Boolean(
+        raw.acts &&
+          typeof raw.acts === "object" &&
+          ((raw.acts as { H24?: boolean }).H24 ||
+            (raw.acts as { h24?: boolean }).h24),
+      ),
+      activity,
+      lowerLimitM: Number.isFinite(lower) ? lower : 0,
+      upperLimitM: Number.isFinite(upper) ? upper : 120,
+      lowerRef: "AGL",
+      upperRef: "AGL",
+      message: body,
+      contact: raw.contact ? String(raw.contact) : undefined,
+      mapStatus: "uas",
+    },
+  };
+}
+
 export async function pansaRawToFeature(
   raw: PansaZoneRaw,
 ): Promise<GeoJSON.Feature | null> {
@@ -557,13 +618,20 @@ export async function queryPansaFiltered(
   rangeM: number,
   maxHeightM: number,
 ): Promise<PansaZoneRaw[]> {
+  const key = filteredCacheKey(lat, lon, rangeM, maxHeightM);
+  const hit = filteredCache.get(key);
+  if (hit && hit.expiresAt > Date.now()) {
+    return hit.raws;
+  }
   const payload = await pansaGet<PansaListResponse>("/v1/zones/filtered", {
     lat,
     lon,
     range: Math.round(rangeM),
     max_height: Math.round(maxHeightM),
   });
-  return Array.isArray(payload.properties) ? payload.properties : [];
+  const raws = Array.isArray(payload.properties) ? payload.properties : [];
+  filteredCache.set(key, { expiresAt: Date.now() + FILTERED_CACHE_TTL_MS, raws });
+  return raws;
 }
 
 export async function queryPansaPoint(
@@ -597,16 +665,19 @@ export async function queryPansaBbox(
   limit = 500,
   maxHeightM = 120,
 ): Promise<GeoJSON.FeatureCollection> {
-  await getPansaTypeMap().catch(() => undefined);
   const { lat, lon, range } = bboxToRangeM(west, south, east, north);
-  // Generous cap — still below country-wide FIR pulls.
-  const cappedRange = Math.min(range, 280_000);
+  const spanDeg = Math.max(east - west, north - south);
+  const cappedRange = Math.min(
+    range,
+    spanDeg > 2 ? 120_000 : spanDeg > 1 ? 80_000 : 60_000,
+    280_000,
+  );
   const raws = await queryPansaFiltered(lat, lon, cappedRange, maxHeightM);
   const features: GeoJSON.Feature[] = [];
   const seen = new Set<string>();
   for (const raw of raws) {
     if (!isPansaMapRelevant(raw)) continue;
-    const feature = await pansaRawToFeature(raw);
+    const feature = pansaRawToFeatureFast(raw);
     if (!feature) continue;
     const id = String((feature.properties as { identifier?: string })?.identifier ?? "");
     if (id && seen.has(id)) continue;

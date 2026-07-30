@@ -11,6 +11,12 @@ import {
   type MatchedZone,
   type UasRestriction,
 } from "@canifly/middleware";
+import {
+  filterFeaturesByBbox,
+  NATIONAL_CACHE_TTL_MS,
+  TimedFeatureCache,
+  ViewportLayerCache,
+} from "./geojson-bbox-cache";
 
 const AIMGIS_BASE = "https://aimgis.rlp.cz/server/rest/services";
 
@@ -66,6 +72,12 @@ const MAP_LAYERS: readonly { service: string; layerId: number }[] = [
   { service: "energeticka_sit", layerId: 1 },
   { service: "zdroje_vody", layerId: 0 },
 ];
+
+const CZ_NATIONAL_BBOX = { west: 12.0, south: 48.5, east: 18.9, north: 51.1 };
+const NATIONAL_LAYER_LIMIT = 3000;
+
+const nationalLayerCaches = new Map<string, TimedFeatureCache>();
+const viewportLayerCache = new ViewportLayerCache();
 
 interface ArcGisFeature {
   attributes?: Record<string, unknown>;
@@ -433,9 +445,145 @@ export async function queryAnscrPoint(
   return matches;
 }
 
+function nationalLayerCache(service: string, layerId: number): TimedFeatureCache {
+  const key = `${service}/${layerId}`;
+  let cache = nationalLayerCaches.get(key);
+  if (!cache) {
+    cache = new TimedFeatureCache(NATIONAL_CACHE_TTL_MS);
+    nationalLayerCaches.set(key, cache);
+  }
+  return cache;
+}
+
+async function fetchLayerNational(
+  service: string,
+  layerId: number,
+): Promise<GeoJSON.Feature[]> {
+  const sw = lonLatToWebMercator(CZ_NATIONAL_BBOX.west, CZ_NATIONAL_BBOX.south);
+  const ne = lonLatToWebMercator(CZ_NATIONAL_BBOX.east, CZ_NATIONAL_BBOX.north);
+  const params = new URLSearchParams({
+    geometry: `${sw.x},${sw.y},${ne.x},${ne.y}`,
+    geometryType: "esriGeometryEnvelope",
+    inSR: "3857",
+    outSR: "4326",
+    spatialRel: "esriSpatialRelIntersects",
+    outFields: OUT_FIELDS,
+    returnGeometry: "true",
+    f: "json",
+    resultRecordCount: String(NATIONAL_LAYER_LIMIT),
+  });
+  const url = layerQueryUrl(service, layerId, params);
+  const payload = await fetchJson(url, { retries: 1, timeoutMs: 30_000 });
+  if (payload.error) return [];
+
+  const out: GeoJSON.Feature[] = [];
+  const seen = new Set<string>();
+  for (const feature of payload.features ?? []) {
+    const zone = attrsToMatchedZone(feature.attributes ?? {});
+    const rings = feature.geometry?.rings;
+    if (!zone || !rings?.length) continue;
+    const key = `${zone.identifier}:${zone.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      type: "Feature",
+      id: zone.identifier,
+      geometry: ringsToGeometry(rings),
+      properties: {
+        identifier: zone.identifier,
+        name: zone.name,
+        restriction: zone.restriction,
+        reason: zone.reason,
+        source: zone.source,
+        country: "CZ",
+        lowerLimitM: zone.lowerLimitM,
+        upperLimitM: zone.upperLimitM,
+        lowerRef: zone.lowerRef,
+        upperRef: zone.upperRef,
+        message: zone.message,
+        mapStatus: zoneVisualStatus(zone),
+      },
+    });
+  }
+  return out;
+}
+
+async function fetchLayerViewport(
+  service: string,
+  layerId: number,
+  clamped: { west: number; south: number; east: number; north: number },
+  perLayer: number,
+): Promise<GeoJSON.Feature[]> {
+  const sw = lonLatToWebMercator(clamped.west, clamped.south);
+  const ne = lonLatToWebMercator(clamped.east, clamped.north);
+  const params = new URLSearchParams({
+    geometry: `${sw.x},${sw.y},${ne.x},${ne.y}`,
+    geometryType: "esriGeometryEnvelope",
+    inSR: "3857",
+    outSR: "4326",
+    spatialRel: "esriSpatialRelIntersects",
+    outFields: OUT_FIELDS,
+    returnGeometry: "true",
+    f: "json",
+    resultRecordCount: String(perLayer),
+  });
+  const url = layerQueryUrl(service, layerId, params);
+  const payload = await fetchJson(url, { retries: 0, timeoutMs: 8_000 });
+  if (payload.error) return [];
+
+  const out: GeoJSON.Feature[] = [];
+  const seen = new Set<string>();
+  for (const feature of payload.features ?? []) {
+    const zone = attrsToMatchedZone(feature.attributes ?? {});
+    const rings = feature.geometry?.rings;
+    if (!zone || !rings?.length) continue;
+    const key = `${zone.identifier}:${zone.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      type: "Feature",
+      id: zone.identifier,
+      geometry: ringsToGeometry(rings),
+      properties: {
+        identifier: zone.identifier,
+        name: zone.name,
+        restriction: zone.restriction,
+        reason: zone.reason,
+        source: zone.source,
+        country: "CZ",
+        lowerLimitM: zone.lowerLimitM,
+        upperLimitM: zone.upperLimitM,
+        lowerRef: zone.lowerRef,
+        upperRef: zone.upperRef,
+        message: zone.message,
+        mapStatus: zoneVisualStatus(zone),
+      },
+    });
+  }
+  return out;
+}
+
+function mergeLayerFeatures(
+  layers: GeoJSON.Feature[][],
+  limit: number,
+): GeoJSON.Feature[] {
+  const merged: GeoJSON.Feature[] = [];
+  const seen = new Set<string>();
+  for (const layer of layers) {
+    for (const f of layer) {
+      const p = (f.properties ?? {}) as { identifier?: string; name?: string };
+      const key = `${p.identifier ?? ""}:${p.name ?? ""}`;
+      if (key !== ":" && seen.has(key)) continue;
+      if (key !== ":") seen.add(key);
+      merged.push(f);
+      if (merged.length >= limit) return merged;
+    }
+  }
+  return merged;
+}
+
 /**
- * Live bbox query for map polygons (excludes Grid CTR/ATZ cells).
- * Oversized viewports are clamped or skipped — aimgis cannot paint all of CZ at once.
+ * Map bbox — national cache when warm, else live viewport with layer cache. Point stays live.
  */
 export async function queryAnscrBbox(
   west: number,
@@ -449,57 +597,51 @@ export async function queryAnscrBbox(
     return { type: "FeatureCollection", features: [] };
   }
 
-  const sw = lonLatToWebMercator(clamped.west, clamped.south);
-  const ne = lonLatToWebMercator(clamped.east, clamped.north);
-  const features: GeoJSON.Feature[] = [];
-  const perLayer = Math.max(20, Math.floor(limit / MAP_LAYERS.length));
-  const seen = new Set<string>();
-
-  await Promise.all(
-    MAP_LAYERS.map(async ({ service, layerId }) => {
-      const params = new URLSearchParams({
-        geometry: `${sw.x},${sw.y},${ne.x},${ne.y}`,
-        geometryType: "esriGeometryEnvelope",
-        inSR: "3857",
-        outSR: "4326",
-        spatialRel: "esriSpatialRelIntersects",
-        outFields: OUT_FIELDS,
-        returnGeometry: "true",
-        f: "json",
-        resultRecordCount: String(perLayer),
-      });
-      const url = layerQueryUrl(service, layerId, params);
-      try {
-        const payload = await fetchJson(url, { retries: 0, timeoutMs: 8_000 });
-        if (payload.error) return;
-
-        for (const feature of payload.features ?? []) {
-          const zone = attrsToMatchedZone(feature.attributes ?? {});
-          const rings = feature.geometry?.rings;
-          if (!zone || !rings?.length) continue;
-          const key = `${zone.identifier}:${zone.name}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          features.push({
-            type: "Feature",
-            id: zone.identifier,
-            geometry: ringsToGeometry(rings),
-            properties: {
-              identifier: zone.identifier,
-              name: zone.name,
-              restriction: zone.restriction,
-              reason: zone.reason,
-              source: zone.source,
-              country: "CZ",
-              lowerLimitM: zone.lowerLimitM,
-              upperLimitM: zone.upperLimitM,
-              lowerRef: zone.lowerRef,
-              upperRef: zone.upperRef,
-              message: zone.message,
-              mapStatus: zoneVisualStatus(zone),
-            },
-          });
+  const nationalReady = MAP_LAYERS.some(({ service, layerId }) =>
+    nationalLayerCache(service, layerId).isWarm(),
+  );
+  if (nationalReady) {
+    const nationalLayers = await Promise.all(
+      MAP_LAYERS.map(async ({ service, layerId }) => {
+        try {
+          return await nationalLayerCache(service, layerId).get(() =>
+            fetchLayerNational(service, layerId),
+          );
+        } catch {
+          return [] as GeoJSON.Feature[];
         }
+      }),
+    );
+    const fromNational = mergeLayerFeatures(
+      nationalLayers.map((layer) =>
+        filterFeaturesByBbox(
+          layer,
+          clamped.west,
+          clamped.south,
+          clamped.east,
+          clamped.north,
+          limit,
+        ),
+      ),
+      limit,
+    );
+    if (fromNational.length > 0) {
+      return { type: "FeatureCollection", features: fromNational };
+    }
+  }
+
+  const perLayer = Math.max(20, Math.floor(limit / MAP_LAYERS.length));
+  const viewportLayers = await Promise.all(
+    MAP_LAYERS.map(async ({ service, layerId }) => {
+      try {
+        return await viewportLayerCache.get(
+          `${service}/${layerId}`,
+          clamped.west,
+          clamped.south,
+          clamped.east,
+          clamped.north,
+          () => fetchLayerViewport(service, layerId, clamped, perLayer),
+        );
       } catch (err) {
         if (
           isTimeout(err) ||
@@ -509,9 +651,21 @@ export async function queryAnscrBbox(
         } else {
           console.warn(`[anscr] ${service}/${layerId} bbox failed`, err);
         }
+        return [] as GeoJSON.Feature[];
       }
     }),
   );
 
-  return { type: "FeatureCollection", features: features.slice(0, limit) };
+  void Promise.all(
+    MAP_LAYERS.map(({ service, layerId }) =>
+      nationalLayerCache(service, layerId)
+        .get(() => fetchLayerNational(service, layerId))
+        .catch(() => []),
+    ),
+  ).catch(() => undefined);
+
+  return {
+    type: "FeatureCollection",
+    features: mergeLayerFeatures(viewportLayers, limit),
+  };
 }
