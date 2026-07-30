@@ -4,6 +4,7 @@
 
 ### Added
 - France live provider via Géoportail WFS (`geopf-client.ts`, backend label `geopf`)
+- German mail locale (`de`) for verification and password-reset emails
 - Germany live provider via dipul WFS (`dipul-client.ts`, backend label `dipul`)
 - LuftVO-oriented open-category restriction mapping (airports / ED-R / military → PROHIBITED)
 

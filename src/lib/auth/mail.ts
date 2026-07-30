@@ -10,7 +10,7 @@ export type SendEmailInput = {
   text: string;
 };
 
-export type MailLocale = "es" | "en" | "pl" | "cs";
+export type MailLocale = "es" | "en" | "de" | "pl" | "cs";
 
 export function appPublicUrl(): string {
   const raw =
@@ -26,7 +26,13 @@ export function mailFromAddress(): string {
 }
 
 export function normalizeMailLocale(value: unknown): MailLocale {
-  if (value === "en" || value === "pl" || value === "es" || value === "cs") {
+  if (
+    value === "en" ||
+    value === "pl" ||
+    value === "es" ||
+    value === "cs" ||
+    value === "de"
+  ) {
     return value;
   }
   return "es";
@@ -104,6 +110,20 @@ const COPY = {
     text: (name: string, url: string) =>
       `Hi ${name},\n\nConfirm your CanIFly account:\n${url}\n\nThis link expires in 24 hours.\n\nIf you did not sign up, ignore this email.\n\n— CanIFly · https://canifly.org`,
   },
+  de: {
+    subject: "Bestätige deine CanIFly-E-Mail",
+    tagline: "UAS-Luftraumkarte für Spanien, Deutschland, Frankreich, Tschechien und Polen",
+    title: "E-Mail bestätigen",
+    hello: (name: string) => `Hallo ${name},`,
+    body: "Bestätige dein CanIFly-Konto, um Hindernisse und Flugorte auf der Karte zu melden.",
+    cta: "E-Mail bestätigen",
+    orPaste: "Oder füge diesen Link in den Browser ein:",
+    expires:
+      "Dieser Link läuft in 24 Stunden ab. Wenn du dich nicht registriert hast, kannst du diese E-Mail ignorieren.",
+    footer: "Planungshilfe, keine offizielle Freigabe",
+    text: (name: string, url: string) =>
+      `Hallo ${name},\n\nBestätige dein CanIFly-Konto:\n${url}\n\nDieser Link läuft in 24 Stunden ab.\n\nWenn du dich nicht registriert hast, ignoriere diese E-Mail.\n\n— CanIFly · https://canifly.org`,
+  },
   pl: {
     subject: "Zweryfikuj e-mail w CanIFly",
     tagline: "Mapa przestrzeni UAS Hiszpania, Czechy i Polska",
@@ -162,6 +182,20 @@ const RESET_COPY = {
     footer: "Planning aid, not official clearance",
     text: (name: string, url: string) =>
       `Hi ${name},\n\nReset your CanIFly password:\n${url}\n\nThis link expires in 24 hours.\n\nIf you did not request this, ignore this email.\n\n— CanIFly · https://canifly.org`,
+  },
+  de: {
+    subject: "CanIFly-Passwort zurücksetzen",
+    tagline: "UAS-Luftraumkarte für Spanien, Deutschland, Frankreich, Tschechien und Polen",
+    title: "Passwort zurücksetzen",
+    hello: (name: string) => `Hallo ${name},`,
+    body: "Wir haben eine Anfrage erhalten, das Passwort deines CanIFly-Kontos zurückzusetzen.",
+    cta: "Passwort zurücksetzen",
+    orPaste: "Oder füge diesen Link in den Browser ein:",
+    expires:
+      "Dieser Link läuft in 24 Stunden ab. Wenn du das nicht angefordert hast, kannst du diese E-Mail ignorieren.",
+    footer: "Planungshilfe, keine offizielle Freigabe",
+    text: (name: string, url: string) =>
+      `Hallo ${name},\n\nSetze dein CanIFly-Passwort zurück:\n${url}\n\nDieser Link läuft in 24 Stunden ab.\n\nWenn du das nicht angefordert hast, ignoriere diese E-Mail.\n\n— CanIFly · https://canifly.org`,
   },
   pl: {
     subject: "Zresetuj hasło CanIFly",
