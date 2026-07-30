@@ -10,7 +10,7 @@ export type SendEmailInput = {
   text: string;
 };
 
-export type MailLocale = "es" | "en" | "de" | "pl" | "cs";
+export type MailLocale = "es" | "en" | "de" | "fr" | "pl" | "cs";
 
 export function appPublicUrl(): string {
   const raw =
@@ -31,7 +31,8 @@ export function normalizeMailLocale(value: unknown): MailLocale {
     value === "pl" ||
     value === "es" ||
     value === "cs" ||
-    value === "de"
+    value === "de" ||
+    value === "fr"
   ) {
     return value;
   }
@@ -124,6 +125,20 @@ const COPY = {
     text: (name: string, url: string) =>
       `Hallo ${name},\n\nBestätige dein CanIFly-Konto:\n${url}\n\nDieser Link läuft in 24 Stunden ab.\n\nWenn du dich nicht registriert hast, ignoriere diese E-Mail.\n\n— CanIFly · https://canifly.org`,
   },
+  fr: {
+    subject: "Vérifiez votre e-mail CanIFly",
+    tagline: "Carte d’espace aérien UAS — Espagne, Allemagne, France, Tchéquie et Pologne",
+    title: "Vérifier l’e-mail",
+    hello: (name: string) => `Bonjour ${name},`,
+    body: "Confirmez votre compte CanIFly pour signaler des obstacles et des spots de vol sur la carte.",
+    cta: "Vérifier l’e-mail",
+    orPaste: "Ou collez ce lien dans votre navigateur :",
+    expires:
+      "Ce lien expire dans 24 heures. Si vous ne vous êtes pas inscrit, ignorez cet e-mail.",
+    footer: "Aide à la planification, pas une autorisation officielle",
+    text: (name: string, url: string) =>
+      `Bonjour ${name},\n\nConfirmez votre compte CanIFly :\n${url}\n\nCe lien expire dans 24 heures.\n\nSi vous ne vous êtes pas inscrit, ignorez cet e-mail.\n\n— CanIFly · https://canifly.org`,
+  },
   pl: {
     subject: "Zweryfikuj e-mail w CanIFly",
     tagline: "Mapa przestrzeni UAS Hiszpania, Czechy i Polska",
@@ -196,6 +211,20 @@ const RESET_COPY = {
     footer: "Planungshilfe, keine offizielle Freigabe",
     text: (name: string, url: string) =>
       `Hallo ${name},\n\nSetze dein CanIFly-Passwort zurück:\n${url}\n\nDieser Link läuft in 24 Stunden ab.\n\nWenn du das nicht angefordert hast, ignoriere diese E-Mail.\n\n— CanIFly · https://canifly.org`,
+  },
+  fr: {
+    subject: "Réinitialisez votre mot de passe CanIFly",
+    tagline: "Carte d’espace aérien UAS — Espagne, Allemagne, France, Tchéquie et Pologne",
+    title: "Réinitialiser le mot de passe",
+    hello: (name: string) => `Bonjour ${name},`,
+    body: "Nous avons reçu une demande de réinitialisation du mot de passe de votre compte CanIFly.",
+    cta: "Réinitialiser le mot de passe",
+    orPaste: "Ou collez ce lien dans votre navigateur :",
+    expires:
+      "Ce lien expire dans 24 heures. Si vous n’avez pas fait cette demande, ignorez cet e-mail.",
+    footer: "Aide à la planification, pas une autorisation officielle",
+    text: (name: string, url: string) =>
+      `Bonjour ${name},\n\nRéinitialisez votre mot de passe CanIFly :\n${url}\n\nCe lien expire dans 24 heures.\n\nSi vous n’avez pas fait cette demande, ignorez cet e-mail.\n\n— CanIFly · https://canifly.org`,
   },
   pl: {
     subject: "Zresetuj hasło CanIFly",
