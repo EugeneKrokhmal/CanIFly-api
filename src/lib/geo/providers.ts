@@ -12,6 +12,10 @@ import {
   queryDipulPoint,
 } from "./dipul-client";
 import {
+  queryGeopfBbox,
+  queryGeopfPoint,
+} from "./geopf-client";
+import {
   queryPansaBbox,
   queryPansaPoint,
 } from "./pansa-client";
@@ -31,10 +35,11 @@ export interface CountryAirspaceProvider {
 
 export function backendLabelForCountry(
   country: CountryId,
-): "servais" | "pansa" | "aimgis" | "dipul" {
+): "servais" | "pansa" | "aimgis" | "dipul" | "geopf" {
   if (country === "PL") return "pansa";
   if (country === "CZ") return "aimgis";
   if (country === "DE") return "dipul";
+  if (country === "FR") return "geopf";
   return "servais";
 }
 
@@ -56,6 +61,17 @@ export const germanyProvider: CountryAirspaceProvider = {
   },
   async queryBbox(west, south, east, north, limit = 500) {
     return queryDipulBbox(west, south, east, north, limit);
+  },
+};
+
+/** France — live Géoportail WFS (data.geopf.fr). */
+export const franceProvider: CountryAirspaceProvider = {
+  country: "FR",
+  async queryPoint(lat, lng) {
+    return queryGeopfPoint(lat, lng);
+  },
+  async queryBbox(west, south, east, north, limit = 500) {
+    return queryGeopfBbox(west, south, east, north, limit);
   },
 };
 
@@ -83,6 +99,7 @@ export const polandProvider: CountryAirspaceProvider = {
 export const COUNTRY_PROVIDERS: Record<CountryId, CountryAirspaceProvider> = {
   ES: spainProvider,
   DE: germanyProvider,
+  FR: franceProvider,
   CZ: czechiaProvider,
   PL: polandProvider,
 };
