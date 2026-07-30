@@ -1,16 +1,19 @@
 import { randomBytes } from "node:crypto";
 import { Hono } from "hono";
-import { and, eq, gt, isNull } from "drizzle-orm";
+import { and, eq, gt, isNull, isNotNull } from "drizzle-orm";
 import {
   authCredentialsSchema,
   authEmailSchema,
   authRegisterSchema,
+  authResetPasswordSchema,
   authVerifyTokenSchema,
   updateLocaleSchema,
 } from "@canifly/middleware";
 import { hashPassword, verifyPassword } from "../lib/auth/password";
 import {
   normalizeMailLocale,
+  resetPasswordEmailContent,
+  resetPasswordUrl,
   sendEmail,
   verificationEmailContent,
   verificationUrl,
@@ -52,6 +55,10 @@ function newVerifyToken(): string {
   return randomBytes(32).toString("hex");
 }
 
+function newResetToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
 async function issueVerificationEmail(opts: {
   email: string;
   name: string;
@@ -62,6 +69,26 @@ async function issueVerificationEmail(opts: {
   const content = verificationEmailContent({
     name: opts.name,
     verifyUrl,
+    locale: opts.locale,
+  });
+  await sendEmail({
+    to: opts.email,
+    subject: content.subject,
+    html: content.html,
+    text: content.text,
+  });
+}
+
+async function issuePasswordResetEmail(opts: {
+  email: string;
+  name: string;
+  token: string;
+  locale: MailLocale;
+}) {
+  const resetUrl = resetPasswordUrl(opts.locale, opts.token);
+  const content = resetPasswordEmailContent({
+    name: opts.name,
+    resetUrl,
     locale: opts.locale,
   });
   await sendEmail({
@@ -331,6 +358,120 @@ authRoutes.post("/resend-verification", async (c) => {
   } catch (err) {
     console.error("[auth/resend-verification]", err);
     return c.json({ error: "Could not resend verification" }, 500);
+  }
+});
+
+authRoutes.post("/forgot-password", async (c) => {
+  try {
+    if (!(await isDatabaseAvailable())) {
+      return c.json({ error: "Database unavailable" }, 503);
+    }
+
+    await ensurePostgisSchema();
+
+    const body = await c.req.json().catch(() => null);
+    const parsed = authEmailSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: "Invalid email" }, 400);
+    }
+
+    const email = parsed.data.email.toLowerCase();
+    const { db } = getDb();
+    const [row] = await db
+      .select()
+      .from(users)
+      .where(and(eq(users.email, email), isNotNull(users.emailVerifiedAt)))
+      .limit(1);
+
+    if (!row) {
+      return c.json({ ok: true });
+    }
+
+    const token = newResetToken();
+    const expires = new Date(Date.now() + VERIFY_TTL_MS);
+    await db
+      .update(users)
+      .set({
+        passwordResetToken: token,
+        passwordResetExpires: expires,
+      })
+      .where(eq(users.id, row.id));
+
+    try {
+      await issuePasswordResetEmail({
+        email: row.email,
+        name: row.name || row.email.split("@")[0] || "Pilot",
+        token,
+        locale: normalizeMailLocale(row.locale),
+      });
+    } catch (err) {
+      console.error("[auth/forgot-password] mail", err);
+    }
+
+    return c.json({ ok: true });
+  } catch (err) {
+    console.error("[auth/forgot-password]", err);
+    return c.json({ error: "Could not process request" }, 500);
+  }
+});
+
+authRoutes.post("/reset-password", async (c) => {
+  try {
+    if (!(await isDatabaseAvailable())) {
+      return c.json({ error: "Database unavailable" }, 503);
+    }
+
+    await ensurePostgisSchema();
+
+    const body = await c.req.json().catch(() => null);
+    const parsed = authResetPasswordSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: "Invalid reset request" }, 400);
+    }
+
+    const { db } = getDb();
+    const now = new Date();
+    const [row] = await db
+      .select()
+      .from(users)
+      .where(
+        and(
+          eq(users.passwordResetToken, parsed.data.token),
+          gt(users.passwordResetExpires, now),
+          isNotNull(users.emailVerifiedAt),
+        ),
+      )
+      .limit(1);
+
+    if (!row) {
+      return c.json({ error: "Invalid or expired reset link" }, 400);
+    }
+
+    const passwordHash = await hashPassword(parsed.data.password);
+    const [updated] = await db
+      .update(users)
+      .set({
+        passwordHash,
+        passwordResetToken: null,
+        passwordResetExpires: null,
+      })
+      .where(eq(users.id, row.id))
+      .returning({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        operatorNumber: users.operatorNumber,
+        bio: users.bio,
+        avatarUrl: users.avatarUrl,
+        locale: users.locale,
+      });
+
+    const user = publicUser(updated);
+    await setAuthCookie(c, { id: user.id, email: user.email });
+    return c.json({ user });
+  } catch (err) {
+    console.error("[auth/reset-password]", err);
+    return c.json({ error: "Password reset failed" }, 500);
   }
 });
 

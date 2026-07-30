@@ -211,6 +211,14 @@ async function runPostgisSchemaMigrations(): Promise<void> {
     ALTER TABLE users
       ADD COLUMN IF NOT EXISTS email_verify_expires timestamptz;
   `;
+  await sql`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS password_reset_token text;
+  `;
+  await sql`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS password_reset_expires timestamptz;
+  `;
   // Legacy accounts created before email verification: treat as verified.
   await sql`
     UPDATE users

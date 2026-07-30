@@ -13,6 +13,7 @@ import {
 } from "../lib/db/client";
 import { listObstaclesByUser } from "../lib/db/obstacle-queries";
 import { users } from "../lib/db/schema";
+import { normalizeMailLocale } from "../lib/auth/mail";
 import {
   deleteAvatarPhoto,
   deleteObstaclePhoto,
@@ -37,7 +38,7 @@ function toPublicUser(row: {
     operatorNumber: row.operatorNumber,
     bio: row.bio,
     avatarUrl: row.avatarUrl,
-    locale: row.locale === "en" ? ("en" as const) : ("es" as const),
+    locale: normalizeMailLocale(row.locale),
   };
 }
 
