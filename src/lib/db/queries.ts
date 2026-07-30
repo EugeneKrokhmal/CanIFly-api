@@ -17,6 +17,13 @@ import {
   type ZoneSource,
 } from "@canifly/middleware";
 import { getProvider } from "../geo/providers";
+import {
+  coalesceZoneBbox,
+  getZoneBboxCached,
+  setZoneBboxCached,
+  zoneBboxCacheKey,
+  zoneBboxCacheTtlMs,
+} from "../geo/zone-bbox-cache";
 
 export interface QueryMeta {
   queryMs: number;
@@ -26,6 +33,8 @@ export interface QueryMeta {
   countries?: CountryId[];
   /** Set when a live provider threw (e.g. missing PANSA_API_KEY). */
   providerError?: string;
+  /** True when served from in-memory bbox cache. */
+  cached?: boolean;
 }
 
 interface RawSliceRow {
@@ -356,6 +365,47 @@ async function querySpainBboxFallback(
 }
 
 export async function queryZonesInBbox(
+  west: number,
+  south: number,
+  east: number,
+  north: number,
+  profile: DroneProfile,
+  altitudeAgl: number,
+  limit = 500,
+): Promise<{ collection: GeoJSON.FeatureCollection; meta: QueryMeta }> {
+  const key = zoneBboxCacheKey(
+    west,
+    south,
+    east,
+    north,
+    profile,
+    altitudeAgl,
+    limit,
+  );
+  const cached = getZoneBboxCached(key);
+  if (cached) {
+    return {
+      collection: cached.collection,
+      meta: { ...cached.meta, queryMs: 0, cached: true },
+    };
+  }
+
+  return coalesceZoneBbox(key, async () => {
+    const result = await queryZonesInBboxLive(
+      west,
+      south,
+      east,
+      north,
+      profile,
+      altitudeAgl,
+      limit,
+    );
+    setZoneBboxCached(key, result, zoneBboxCacheTtlMs());
+    return result;
+  });
+}
+
+async function queryZonesInBboxLive(
   west: number,
   south: number,
   east: number,

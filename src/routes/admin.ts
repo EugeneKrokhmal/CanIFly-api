@@ -8,6 +8,7 @@ import {
 } from "@canifly/middleware";
 import { ensurePostgisSchema, isDatabaseAvailable } from "../lib/db/client";
 import { getSliceCount, ingestFeatures } from "../lib/db/queries";
+import { clearZoneBboxCache } from "../lib/geo/zone-bbox-cache";
 import {
   downloadEd318Source,
   EnaireFetchError,
@@ -107,6 +108,7 @@ adminRoutes.post("/ingest", async (c) => {
     }
 
     const total = await getSliceCount();
+    clearZoneBboxCache();
 
     return c.json({
       ok: true,

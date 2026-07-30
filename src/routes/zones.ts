@@ -54,6 +54,12 @@ zonesRoutes.get("/bbox", async (c) => {
       limit,
     );
 
+    const maxAge = Math.max(60, Math.floor(Number(process.env.ZONE_BBOX_CACHE_TTL_MS ?? 1_800_000) / 1000));
+    c.header(
+      "Cache-Control",
+      `public, max-age=${maxAge}, stale-while-revalidate=86400`,
+    );
+
     return c.json({ ...collection, meta });
   } catch (err) {
     console.error("[zones/bbox]", err);
