@@ -32,7 +32,7 @@ import {
 export interface QueryMeta {
   queryMs: number;
   dataVersion: string | null;
-  backend: "servais" | "pansa" | "aimgis" | "postgis" | "memory" | "multi";
+  backend: "servais" | "pansa" | "aimgis" | "dipul" | "postgis" | "memory" | "multi";
   country?: CountryId | null;
   countries?: CountryId[];
   /** Set when a live provider threw (e.g. missing PANSA_API_KEY). */
@@ -81,7 +81,7 @@ export async function queryPointIntersects(
   const provider = getProvider(country);
   try {
     const live = await provider.queryPoint(lat, lng, altitudeAgl);
-    if (live.length > 0 || country === "PL" || country === "CZ") {
+    if (live.length > 0 || country === "PL" || country === "CZ" || country === "DE") {
       return {
         zones: live,
         meta: {
@@ -98,7 +98,7 @@ export async function queryPointIntersects(
       `[queryPointIntersects] ${country} provider failed, falling back`,
       err,
     );
-    if (country === "PL" || country === "CZ") {
+    if (country === "PL" || country === "CZ" || country === "DE") {
       return {
         zones: [],
         meta: {
@@ -111,7 +111,6 @@ export async function queryPointIntersects(
       };
     }
   }
-
   if (country === "ES") {
     return querySpainFallbacks(lat, lng, started);
   }
@@ -322,7 +321,7 @@ async function queryZonesInBboxLive(
           return;
         }
         // Empty success still counts as the live/primary backend for PL/CZ.
-        if (country === "PL" || country === "CZ") {
+        if (country === "PL" || country === "CZ" || country === "DE") {
           backends.add(backendLabelForCountry(country));
         }
       } catch (err) {
@@ -331,12 +330,11 @@ async function queryZonesInBboxLive(
           `[queryZonesInBbox] ${country} provider failed, falling back`,
           err,
         );
-        if (country === "PL" || country === "CZ") {
+        if (country === "PL" || country === "CZ" || country === "DE") {
           backends.add(backendLabelForCountry(country));
           providerError = message;
         }
       }
-
       if (country === "ES") {
         const fallback = await querySpainBboxFallback(
           west,
@@ -375,9 +373,11 @@ async function queryZonesInBboxLive(
           ? "servais"
           : backendList[0] === "aimgis"
             ? "aimgis"
-            : backendList[0] === "postgis"
-              ? "postgis"
-              : "memory";
+            : backendList[0] === "dipul"
+              ? "dipul"
+              : backendList[0] === "postgis"
+                ? "postgis"
+                : "memory";
 
   return {
     collection: { type: "FeatureCollection", features },

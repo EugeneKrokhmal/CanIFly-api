@@ -1,10 +1,15 @@
 /**
  * Live Czech UAS zones via ANS CR ArcGIS REST (aimgis.rlp.cz),
  * the same backend DroneMap uses — no zip downloads / PostGIS ingest.
+ *
+ * Restriction semantics follow CAA / LKR310–320 + LKP (zakázané) for open
+ * category: inner AD zones (LKR314B/D/F) are hard no-fly without DroneMap
+ * coordination; military ODOS / LKP → PROHIBITED; grids/HOP/nature → CONDITIONAL.
  */
-import type {
-  MatchedZone,
-  UasRestriction,
+import {
+  zoneVisualStatus,
+  type MatchedZone,
+  type UasRestriction,
 } from "@canifly/middleware";
 
 const AIMGIS_BASE = "https://aimgis.rlp.cz/server/rest/services";
@@ -44,6 +49,7 @@ const STATUS_LAYERS: readonly { service: string; layerId: number }[] = [
   { service: "ODOS", layerId: 0 },
   { service: "energeticka_sit", layerId: 0 },
   { service: "energeticka_sit", layerId: 1 },
+  { service: "zdroje_vody", layerId: 0 },
   { service: "Gridy", layerId: 0 },
   { service: "Gridy", layerId: 1 },
 ];
@@ -51,12 +57,14 @@ const STATUS_LAYERS: readonly { service: string; layerId: number }[] = [
 /** Map layers — light enough for live geometry at regional zoom. */
 const MAP_LAYERS: readonly { service: string; layerId: number }[] = [
   { service: "zony", layerId: 0 },
+  { service: "ODOS", layerId: 0 },
   { service: "HOPs", layerId: 2 },
   { service: "chranena_uzemi", layerId: 0 },
   { service: "chranena_uzemi", layerId: 1 },
   { service: "chranena_uzemi", layerId: 2 },
   { service: "energeticka_sit", layerId: 0 },
   { service: "energeticka_sit", layerId: 1 },
+  { service: "zdroje_vody", layerId: 0 },
 ];
 
 interface ArcGisFeature {
@@ -126,13 +134,31 @@ async function fetchJson(
   );
 }
 
-function parseVyska(raw: unknown): {
+function parseVyska(
+  raw: unknown,
+  aglLimit?: unknown,
+): {
   lowerLimitM: number;
   upperLimitM: number;
   lowerRef: string;
   upperRef: string;
   message?: string;
 } {
+  // Grid CTR/ATZ: numeric AGL_limit is authoritative (0 = no free band).
+  if (aglLimit != null && aglLimit !== "" && Number.isFinite(Number(aglLimit))) {
+    const limit = Number(aglLimit);
+    return {
+      lowerLimitM: 0,
+      upperLimitM: limit > 0 ? limit : 120,
+      lowerRef: "AGL",
+      upperRef: "AGL",
+      message:
+        limit > 0
+          ? `Do výšky gridu ${limit} m AGL`
+          : String(raw ?? "Grid AGL 0 — koordinace nutná"),
+    };
+  }
+
   const text = String(raw ?? "").trim();
   if (!text) {
     return { lowerLimitM: 0, upperLimitM: 120, lowerRef: "AGL", upperRef: "AGL" };
@@ -181,6 +207,81 @@ function parseVyska(raw: unknown): {
   };
 }
 
+/**
+ * Map aimgis attrs → ED-318-like restriction for open-category UX.
+ * Sources: CAA LKR/LKP overview + DroneMap / letejtezodpovedne CTR rules.
+ */
+function restrictionForAttrs(attrs: Record<string, unknown>): UasRestriction {
+  const type = String(attrs.type ?? "").toUpperCase();
+  const zone = String(attrs.zone ?? "").toUpperCase();
+  const oop = String(attrs.OOP ?? "").toUpperCase();
+  const kat = String(attrs.KAT ?? "").toUpperCase();
+  const nazev = String(attrs.nazev ?? "").toUpperCase();
+  const nazev2 = String(attrs.nazev2 ?? "").toUpperCase();
+  const blob = `${type} ${zone} ${oop} ${kat} ${nazev} ${nazev2}`;
+
+  // AIP prohibited areas (zakázané prostory LKP*)
+  if (/\bLKP\d/.test(oop) || nazev.includes("ZAKÁZ") || nazev2.includes("ZAKÁZ")) {
+    return "PROHIBITED";
+  }
+
+  // Inner aerodrome / CTR / MCTR zones (LKR314B/D/F) — airport hard core
+  if (
+    type.includes("AD_PERIMETER") ||
+    zone.includes("INNER_AD") ||
+    /\bLKR314[BDF]\b/.test(oop) ||
+    nazev.includes("VNITŘNÍ ZÓNA") ||
+    nazev.includes("VNITRNI ZONA")
+  ) {
+    return "PROHIBITED";
+  }
+
+  // Military objects (ODOS / LKR319)
+  if (
+    /\bLKR319\b/.test(oop) ||
+    nazev.includes("VOJENSK") ||
+    nazev2.includes("VOJENSK") ||
+    blob.includes("MILITARY")
+  ) {
+    return "PROHIBITED";
+  }
+
+  // National parks — typically consent / no recreational
+  if (kat === "NP" || /\bLKR318A\b/.test(oop)) {
+    return "PROHIBITED";
+  }
+
+  // Grid CTR/ATZ with AGL_limit 0 → no free band at surface
+  if (type.includes("GRID")) {
+    const limit =
+      attrs.AGL_limit != null && attrs.AGL_limit !== ""
+        ? Number(attrs.AGL_limit)
+        : NaN;
+    if (Number.isFinite(limit) && limit <= 0) return "PROHIBITED";
+    return "CONDITIONAL";
+  }
+
+  // Densely populated (HOP), nature, roads, rail, energy, water — conditions
+  if (
+    type.includes("PERIMETER") || // outer AD buffers if present
+    /\bLKR314[ACE]\b/.test(oop) || // outer CTR / MCTR
+    /\bLKR315/.test(oop) || // ATZ / SLZ / HEL
+    /\bLKR316\b/.test(oop) || // HOP
+    /\bLKR318/.test(oop) || // protected nature
+    /\bLKR31[1237]\b/.test(oop) || // rail / energy / water / roads
+    kat === "CHKO" ||
+    kat === "PR" ||
+    kat === "PP" ||
+    kat === "NPR" ||
+    nazev.includes("HUSTĚ OSÍDL") ||
+    nazev.includes("HUSTE OSIDL")
+  ) {
+    return "CONDITIONAL";
+  }
+
+  return "REQ_AUTHORISATION";
+}
+
 function attrsToMatchedZone(
   attrs: Record<string, unknown>,
 ): MatchedZone | null {
@@ -192,17 +293,26 @@ function attrsToMatchedZone(
   const name = String(
     attrs.nazev2 ?? attrs.nazev ?? attrs.type ?? identifier,
   ).trim();
-  const vertical = parseVyska(attrs.vyska ?? attrs.AGL_limit);
-
-  const type = String(attrs.type ?? "").toLowerCase();
-  const restriction: UasRestriction =
-    type.includes("grid") || type.includes("perimeter")
-      ? "CONDITIONAL"
-      : "REQ_AUTHORISATION";
+  const vertical = parseVyska(attrs.vyska, attrs.AGL_limit);
+  const restriction = restrictionForAttrs(attrs);
 
   const reason: string[] = [];
+  if (attrs.type) reason.push(String(attrs.type));
+  if (attrs.zone) reason.push(String(attrs.zone));
   if (attrs.OOP) reason.push(String(attrs.OOP));
   if (attrs.KAT) reason.push(String(attrs.KAT));
+  const nazev = String(attrs.nazev ?? "");
+  if (/vojensk/i.test(nazev)) reason.push("MILITARY");
+
+  // Surface grid with AGL 0: keep full band so status still matches at pin altitude
+  let upperLimitM = vertical.upperLimitM;
+  if (
+    String(attrs.type ?? "").toUpperCase().includes("GRID") &&
+    attrs.AGL_limit != null &&
+    Number(attrs.AGL_limit) <= 0
+  ) {
+    upperLimitM = Math.max(upperLimitM, 120);
+  }
 
   return {
     identifier,
@@ -212,7 +322,7 @@ function attrsToMatchedZone(
     source: "anscr",
     country: "CZ",
     lowerLimitM: vertical.lowerLimitM,
-    upperLimitM: vertical.upperLimitM,
+    upperLimitM,
     lowerRef: vertical.lowerRef,
     upperRef: vertical.upperRef,
     contact: attrs.provoz_ZZ ? String(attrs.provoz_ZZ) : undefined,
@@ -386,7 +496,7 @@ export async function queryAnscrBbox(
               lowerRef: zone.lowerRef,
               upperRef: zone.upperRef,
               message: zone.message,
-              mapStatus: "uas",
+              mapStatus: zoneVisualStatus(zone),
             },
           });
         }

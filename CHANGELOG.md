@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Germany live provider via dipul WFS (`dipul-client.ts`, backend label `dipul`)
+- LuftVO-oriented open-category restriction mapping (airports / ED-R / military → PROHIBITED)
+
+### Changed
+- Czechia aimgis: AD_perimeter / LKR314 inner zones and military ODOS map to PROHIBITED; `mapStatus` from `zoneVisualStatus`
+
 ## [0.3.0] — 2026-07-30
 
 ### Added

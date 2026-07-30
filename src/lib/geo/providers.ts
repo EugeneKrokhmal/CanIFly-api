@@ -8,6 +8,10 @@ import {
   queryAnscrPoint,
 } from "./anscr-client";
 import {
+  queryDipulBbox,
+  queryDipulPoint,
+} from "./dipul-client";
+import {
   queryPansaBbox,
   queryPansaPoint,
 } from "./pansa-client";
@@ -27,9 +31,10 @@ export interface CountryAirspaceProvider {
 
 export function backendLabelForCountry(
   country: CountryId,
-): "servais" | "pansa" | "aimgis" {
+): "servais" | "pansa" | "aimgis" | "dipul" {
   if (country === "PL") return "pansa";
   if (country === "CZ") return "aimgis";
+  if (country === "DE") return "dipul";
   return "servais";
 }
 
@@ -43,7 +48,18 @@ export const spainProvider: CountryAirspaceProvider = {
   },
 };
 
-/** Czechia — live ANS CR ArcGIS (aimgis.rlp.cz), same source as DroneMap. */
+/** Germany — live dipul WFS (uas-betrieb.de). */
+export const germanyProvider: CountryAirspaceProvider = {
+  country: "DE",
+  async queryPoint(lat, lng) {
+    return queryDipulPoint(lat, lng);
+  },
+  async queryBbox(west, south, east, north, limit = 500) {
+    return queryDipulBbox(west, south, east, north, limit);
+  },
+};
+
+/** Czechia — live ANS CR ArcGIS (aimgis.rlp.cz). */
 export const czechiaProvider: CountryAirspaceProvider = {
   country: "CZ",
   async queryPoint(lat, lng) {
@@ -66,6 +82,7 @@ export const polandProvider: CountryAirspaceProvider = {
 
 export const COUNTRY_PROVIDERS: Record<CountryId, CountryAirspaceProvider> = {
   ES: spainProvider,
+  DE: germanyProvider,
   CZ: czechiaProvider,
   PL: polandProvider,
 };
