@@ -7,7 +7,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/*
 
 # Pin middleware commit so Docker cache invalidates when schemas change.
-ARG MIDDLEWARE_REF=58662b07d552710311fdd0f1105f0a6806b084ac
+ARG MIDDLEWARE_REF=32fa4936138dc41068a8531c43af0083a3696d6e
 RUN git clone --depth 1 https://github.com/EugeneKrokhmal/CanIFly-middleware.git /app/CanIFly-middleware \
   && cd /app/CanIFly-middleware \
   && git fetch --depth 1 origin ${MIDDLEWARE_REF} \
