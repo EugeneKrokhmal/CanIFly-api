@@ -10,7 +10,7 @@
 import { config } from "dotenv";
 config({ path: ".env" });
 
-import { ED318_SOURCES } from "../src/lib/constants";
+import { ED318_SOURCES, type ZoneSource } from "@canifly/middleware";
 import {
   downloadEd318File,
   downloadEd318Source,
@@ -19,7 +19,6 @@ import {
 import { FIXTURE_ZONES } from "../src/lib/geo/fixtures";
 import { ensurePostgisSchema, isDatabaseAvailable } from "../src/lib/db/client";
 import { ingestFeatures, getSliceCount } from "../src/lib/db/queries";
-import type { ZoneSource } from "../src/lib/geo/ed318-types";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);

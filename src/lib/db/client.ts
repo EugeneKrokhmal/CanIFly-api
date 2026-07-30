@@ -89,12 +89,21 @@ async function runPostgisSchemaMigrations(): Promise<void> {
 
   await sql`
     DO $$ BEGIN
-      CREATE TYPE zone_source AS ENUM ('aero', 'urbano', 'infra', 'servais', 'fixture');
+      CREATE TYPE zone_source AS ENUM ('aero', 'urbano', 'infra', 'servais', 'fixture', 'pansa', 'anscr');
     EXCEPTION
       WHEN duplicate_object THEN null;
     END $$;
   `;
 
+  for (const value of ["pansa", "anscr"] as const) {
+    await sql.unsafe(`
+      DO $$ BEGIN
+        ALTER TYPE zone_source ADD VALUE IF NOT EXISTS '${value}';
+      EXCEPTION
+        WHEN duplicate_object THEN null;
+      END $$;
+    `);
+  }
   await sql`
     CREATE TABLE IF NOT EXISTS uas_zone_slices (
       id uuid PRIMARY KEY DEFAULT gen_random_uuid(),

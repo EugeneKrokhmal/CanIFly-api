@@ -4,6 +4,10 @@ import {
   queryServaisPoint,
 } from "./enaire-client";
 import {
+  queryAnscrBbox,
+  queryAnscrPoint,
+} from "./anscr-client";
+import {
   queryPansaBbox,
   queryPansaPoint,
 } from "./pansa-client";
@@ -21,6 +25,14 @@ export interface CountryAirspaceProvider {
   ): Promise<GeoJSON.FeatureCollection>;
 }
 
+export function backendLabelForCountry(
+  country: CountryId,
+): "servais" | "pansa" | "aimgis" {
+  if (country === "PL") return "pansa";
+  if (country === "CZ") return "aimgis";
+  return "servais";
+}
+
 export const spainProvider: CountryAirspaceProvider = {
   country: "ES",
   async queryPoint(lat, lng) {
@@ -28,6 +40,17 @@ export const spainProvider: CountryAirspaceProvider = {
   },
   async queryBbox(west, south, east, north, limit = 500) {
     return queryServaisBbox(west, south, east, north, limit);
+  },
+};
+
+/** Czechia — live ANS CR ArcGIS (aimgis.rlp.cz), same source as DroneMap. */
+export const czechiaProvider: CountryAirspaceProvider = {
+  country: "CZ",
+  async queryPoint(lat, lng) {
+    return queryAnscrPoint(lat, lng);
+  },
+  async queryBbox(west, south, east, north, limit = 500) {
+    return queryAnscrBbox(west, south, east, north, limit);
   },
 };
 
@@ -43,6 +66,7 @@ export const polandProvider: CountryAirspaceProvider = {
 
 export const COUNTRY_PROVIDERS: Record<CountryId, CountryAirspaceProvider> = {
   ES: spainProvider,
+  CZ: czechiaProvider,
   PL: polandProvider,
 };
 

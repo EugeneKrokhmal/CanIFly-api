@@ -27,5 +27,8 @@ yarn-debug.log*
 /uploads/**
 !/uploads/.gitkeep
 
+# local zone downloads (ENAIRE / ANS CR)
+/data/
+
 # typescript
 *.tsbuildinfo

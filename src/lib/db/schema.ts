@@ -18,6 +18,7 @@ export const zoneSourceEnum = pgEnum("zone_source", [
   "servais",
   "fixture",
   "pansa",
+  "anscr",
 ]);
 
 export const pinKindEnum = pgEnum("pin_kind", ["obstacle", "fly_spot"]);

@@ -8,15 +8,19 @@ import {
   geoJsonToWkt,
   resolveCountry,
   zoneFeatureToSlices,
+  zoneVisualStatus,
   type CountryId,
   type DroneProfile,
   type MatchedZone,
   type StatusResult,
-  type UasZoneFeature,
   type ZoneSliceRecord,
   type ZoneSource,
 } from "@canifly/middleware";
-import { getProvider } from "../geo/providers";
+import { backendLabelForCountry, getProvider } from "../geo/providers";
+import {
+  queryPostgisBbox,
+  queryPostgisPoint,
+} from "../geo/postgis-zones";
 import {
   coalesceZoneBbox,
   getZoneBboxCached,
@@ -28,7 +32,7 @@ import {
 export interface QueryMeta {
   queryMs: number;
   dataVersion: string | null;
-  backend: "servais" | "pansa" | "postgis" | "memory" | "multi";
+  backend: "servais" | "pansa" | "aimgis" | "postgis" | "memory" | "multi";
   country?: CountryId | null;
   countries?: CountryId[];
   /** Set when a live provider threw (e.g. missing PANSA_API_KEY). */
@@ -37,102 +41,18 @@ export interface QueryMeta {
   cached?: boolean;
 }
 
-interface RawSliceRow {
-  zone_identifier: string;
-  name: string;
-  restriction: string;
-  reason: string[] | null;
-  source: ZoneSource;
-  lower_limit_m: number;
-  upper_limit_m: number;
-  lower_ref: string;
-  upper_ref: string;
-  properties: UasZoneFeature;
-  geom_geojson?: string | GeoJSON.Geometry;
-}
-
-function rowToMatchedZone(row: RawSliceRow): MatchedZone {
-  const contact = row.properties?.zoneAuthority?.[0]?.email;
-  const countryRaw = row.properties?.country;
-  const country =
-    countryRaw === "ESP" || countryRaw === "ES"
-      ? "ES"
-      : countryRaw === "POL" || countryRaw === "PL"
-        ? "PL"
-        : undefined;
-  return {
-    identifier: row.zone_identifier,
-    name: row.name,
-    restriction: row.restriction,
-    reason: row.reason ?? [],
-    source: row.source,
-    country,
-    lowerLimitM: row.lower_limit_m,
-    upperLimitM: row.upper_limit_m,
-    lowerRef: row.lower_ref,
-    upperRef: row.upper_ref,
-    contact,
-    message: row.properties?.message,
-  };
-}
-
 async function querySpainFallbacks(
   lat: number,
   lng: number,
   started: number,
-): Promise<{ zones: MatchedZone[]; meta: QueryMeta } | null> {
-  const available = await isDatabaseAvailable();
-  if (available) {
-    const { sql: client } = getDb();
-    const rows = await client<RawSliceRow[]>`
-      SELECT
-        zone_identifier,
-        name,
-        restriction,
-        reason,
-        source,
-        lower_limit_m,
-        upper_limit_m,
-        lower_ref,
-        upper_ref,
-        properties
-      FROM uas_zone_slices
-      WHERE ST_Intersects(
-        geom,
-        ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)
-      )
-      LIMIT 50
-    `;
-
-    const versionRows = await client<{ v: Date | null }[]>`
-      SELECT MAX(ingested_at) AS v FROM uas_zone_slices
-    `;
-
-    if (rows.length > 0) {
-      return {
-        zones: rows.map(rowToMatchedZone),
-        meta: {
-          queryMs: Math.round(performance.now() - started),
-          dataVersion: versionRows[0]?.v
-            ? new Date(versionRows[0].v).toISOString().slice(0, 10)
-            : null,
-          backend: "postgis",
-          country: "ES",
-        },
-      };
-    }
-  }
-
-  const zones = memoryZoneStore.queryPoint(lat, lng).map((z) => ({
-    ...z,
-    country: z.country ?? "ES",
-  }));
+): Promise<{ zones: MatchedZone[]; meta: QueryMeta }> {
+  const result = await queryPostgisPoint(lat, lng, { fallbackCountry: "ES" });
   return {
-    zones,
+    zones: result.zones,
     meta: {
       queryMs: Math.round(performance.now() - started),
-      dataVersion: memoryZoneStore.getDataVersion(),
-      backend: "memory",
+      dataVersion: result.dataVersion,
+      backend: result.backend,
       country: "ES",
     },
   };
@@ -161,13 +81,13 @@ export async function queryPointIntersects(
   const provider = getProvider(country);
   try {
     const live = await provider.queryPoint(lat, lng, altitudeAgl);
-    if (live.length > 0 || country === "PL") {
+    if (live.length > 0 || country === "PL" || country === "CZ") {
       return {
         zones: live,
         meta: {
           queryMs: Math.round(performance.now() - started),
           dataVersion: new Date().toISOString().slice(0, 10),
-          backend: country === "PL" ? "pansa" : "servais",
+          backend: backendLabelForCountry(country),
           country,
         },
       };
@@ -178,13 +98,13 @@ export async function queryPointIntersects(
       `[queryPointIntersects] ${country} provider failed, falling back`,
       err,
     );
-    if (country === "PL") {
+    if (country === "PL" || country === "CZ") {
       return {
         zones: [],
         meta: {
           queryMs: Math.round(performance.now() - started),
           dataVersion: null,
-          backend: "pansa",
+          backend: backendLabelForCountry(country),
           country,
           providerError: message,
         },
@@ -193,8 +113,7 @@ export async function queryPointIntersects(
   }
 
   if (country === "ES") {
-    const fallback = await querySpainFallbacks(lat, lng, started);
-    if (fallback) return fallback;
+    return querySpainFallbacks(lat, lng, started);
   }
 
   return {
@@ -202,7 +121,7 @@ export async function queryPointIntersects(
     meta: {
       queryMs: Math.round(performance.now() - started),
       dataVersion: null,
-      backend: country === "PL" ? "pansa" : "servais",
+      backend: backendLabelForCountry(country),
       country,
     },
   };
@@ -218,6 +137,17 @@ export async function evaluateAirspaceStatus(
   const filtered = filterByProfile(zones, profile, altitudeAgl);
   const result = classifyStatus(filtered, { ceilingAgl: altitudeAgl });
   return { result, meta };
+}
+
+function normalizeReason(value: unknown): string[] {
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value === "string" && value.length > 0) {
+    return value
+      .split(/[,;|]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+  return [];
 }
 
 function filterCollection(
@@ -248,7 +178,7 @@ function filterCollection(
       identifier: id,
       name: String(p.name ?? ""),
       restriction: String(p.restriction ?? ""),
-      reason: p.reason ?? [],
+      reason: normalizeReason(p.reason),
       source: (p.source ?? "fixture") as ZoneSource,
       country: p.country,
       lowerLimitM: Number(p.lowerLimitM ?? 0),
@@ -263,7 +193,7 @@ function filterCollection(
       ...f,
       properties: {
         ...f.properties,
-        mapStatus: "uas",
+        mapStatus: zoneVisualStatus(zone),
       },
     });
   }
@@ -280,84 +210,24 @@ async function querySpainBboxFallback(
   limit: number,
   started: number,
 ): Promise<{ collection: GeoJSON.FeatureCollection; meta: QueryMeta }> {
-  const available = await isDatabaseAvailable();
-
-  if (!available) {
-    const raw = memoryZoneStore.queryBbox(west, south, east, north);
-    return {
-      collection: {
-        type: "FeatureCollection",
-        features: filterCollection(raw, profile, altitudeAgl),
-      },
-      meta: {
-        queryMs: Math.round(performance.now() - started),
-        dataVersion: memoryZoneStore.getDataVersion(),
-        backend: "memory",
-        country: "ES",
-        countries: ["ES"],
-      },
-    };
-  }
-
-  const { sql: client } = getDb();
-  const rows = await client<(RawSliceRow & { geom_geojson: string })[]>`
-    SELECT
-      zone_identifier,
-      name,
-      restriction,
-      reason,
-      source,
-      lower_limit_m,
-      upper_limit_m,
-      lower_ref,
-      upper_ref,
-      properties,
-      ST_AsGeoJSON(geom)::text AS geom_geojson
-    FROM uas_zone_slices
-    WHERE geom && ST_MakeEnvelope(${west}, ${south}, ${east}, ${north}, 4326)
-    LIMIT ${limit}
-  `;
-
-  const features: GeoJSON.Feature[] = [];
-  for (const row of rows) {
-    const zone = rowToMatchedZone(row);
-    if (filterForMap([zone], profile, altitudeAgl).length === 0) continue;
-    const geometry =
-      typeof row.geom_geojson === "string"
-        ? (JSON.parse(row.geom_geojson) as GeoJSON.Geometry)
-        : row.geom_geojson;
-    features.push({
-      type: "Feature",
-      geometry,
-      properties: {
-        identifier: zone.identifier,
-        name: zone.name,
-        restriction: zone.restriction,
-        reason: zone.reason,
-        source: zone.source,
-        country: zone.country ?? "ES",
-        lowerLimitM: zone.lowerLimitM,
-        upperLimitM: zone.upperLimitM,
-        lowerRef: zone.lowerRef,
-        upperRef: zone.upperRef,
-        message: zone.message,
-        mapStatus: "uas",
-      },
-    });
-  }
-
-  const versionRows = await client<{ v: Date | null }[]>`
-    SELECT MAX(ingested_at) AS v FROM uas_zone_slices
-  `;
-
+  const result = await queryPostgisBbox(west, south, east, north, {
+    fallbackCountry: "ES",
+    limit,
+  });
+  const collection: GeoJSON.FeatureCollection = {
+    type: "FeatureCollection",
+    features: filterCollection(
+      { type: "FeatureCollection", features: result.features },
+      profile,
+      altitudeAgl,
+    ),
+  };
   return {
-    collection: { type: "FeatureCollection", features },
+    collection,
     meta: {
       queryMs: Math.round(performance.now() - started),
-      dataVersion: versionRows[0]?.v
-        ? new Date(versionRows[0].v).toISOString().slice(0, 10)
-        : null,
-      backend: "postgis",
+      dataVersion: result.dataVersion,
+      backend: result.backend,
       country: "ES",
       countries: ["ES"],
     },
@@ -447,20 +317,22 @@ async function queryZonesInBboxLive(
           altitudeAgl,
         );
         if (live.features.length > 0) {
-          backends.add(country === "PL" ? "pansa" : "servais");
+          backends.add(backendLabelForCountry(country));
           merged.push(...filterCollection(live, profile, altitudeAgl));
           return;
         }
-        // Empty success still counts as the live backend for PL.
-        if (country === "PL") backends.add("pansa");
+        // Empty success still counts as the live/primary backend for PL/CZ.
+        if (country === "PL" || country === "CZ") {
+          backends.add(backendLabelForCountry(country));
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(
           `[queryZonesInBbox] ${country} provider failed, falling back`,
           err,
         );
-        if (country === "PL") {
-          backends.add("pansa");
+        if (country === "PL" || country === "CZ") {
+          backends.add(backendLabelForCountry(country));
           providerError = message;
         }
       }
@@ -501,9 +373,11 @@ async function queryZonesInBboxLive(
         ? "pansa"
         : backendList[0] === "servais"
           ? "servais"
-          : backendList[0] === "postgis"
-            ? "postgis"
-            : "memory";
+          : backendList[0] === "aimgis"
+            ? "aimgis"
+            : backendList[0] === "postgis"
+              ? "postgis"
+              : "memory";
 
   return {
     collection: { type: "FeatureCollection", features },
@@ -528,51 +402,61 @@ export async function replaceSlicesForSource(
   }
 
   const { sql: client } = getDb();
-  await client.begin(async (tx) => {
-    await tx`DELETE FROM uas_zone_slices WHERE source = ${source}`;
-    for (const slice of slices) {
-      const wkt = geoJsonToWkt(slice.geomGeoJson);
-      const validFrom = slice.validFrom
-        ? slice.validFrom.toISOString()
-        : null;
-      const validTo = slice.validTo ? slice.validTo.toISOString() : null;
-      const ingestedAt =
-        slice.ingestedAt instanceof Date
-          ? slice.ingestedAt.toISOString()
-          : new Date(slice.ingestedAt).toISOString();
-      await tx`
-        INSERT INTO uas_zone_slices (
-          id, zone_identifier, name, source, restriction, reason, zone_type,
-          lower_limit_m, upper_limit_m, lower_ref, upper_ref, properties,
-          geom, geom_wkt, valid_from, valid_to, ingested_at
-        ) VALUES (
-          ${slice.id}::uuid,
-          ${slice.zoneIdentifier},
-          ${slice.name},
-          ${slice.source}::zone_source,
-          ${slice.restriction},
-          ${slice.reason},
-          ${slice.zoneType},
-          ${slice.lowerLimitM},
-          ${slice.upperLimitM},
-          ${slice.lowerRef},
-          ${slice.upperRef},
-          ${JSON.stringify(slice.properties)}::jsonb,
-          ST_SetSRID(ST_GeomFromText(${wkt}), 4326),
-          ${wkt},
-          ${validFrom},
-          ${validTo},
-          ${ingestedAt}
-        )
-      `;
+  await client`DELETE FROM uas_zone_slices WHERE source = ${source}`;
+
+  const BATCH = 100;
+  for (let i = 0; i < slices.length; i += BATCH) {
+    const batch = slices.slice(i, i + BATCH);
+    await client.begin(async (tx) => {
+      for (const slice of batch) {
+        const wkt = geoJsonToWkt(slice.geomGeoJson);
+        const validFrom = slice.validFrom
+          ? slice.validFrom.toISOString()
+          : null;
+        const validTo = slice.validTo ? slice.validTo.toISOString() : null;
+        const ingestedAt =
+          slice.ingestedAt instanceof Date
+            ? slice.ingestedAt.toISOString()
+            : new Date(slice.ingestedAt).toISOString();
+        await tx`
+          INSERT INTO uas_zone_slices (
+            id, zone_identifier, name, source, restriction, reason, zone_type,
+            lower_limit_m, upper_limit_m, lower_ref, upper_ref, properties,
+            geom, geom_wkt, valid_from, valid_to, ingested_at
+          ) VALUES (
+            ${slice.id}::uuid,
+            ${slice.zoneIdentifier},
+            ${slice.name},
+            ${slice.source}::zone_source,
+            ${slice.restriction},
+            ${slice.reason},
+            ${slice.zoneType},
+            ${slice.lowerLimitM},
+            ${slice.upperLimitM},
+            ${slice.lowerRef},
+            ${slice.upperRef},
+            ${JSON.stringify(slice.properties)}::jsonb,
+            ST_SetSRID(ST_GeomFromText(${wkt}), 4326),
+            ${wkt},
+            ${validFrom},
+            ${validTo},
+            ${ingestedAt}
+          )
+        `;
+      }
+    });
+    if ((i + BATCH) % 500 === 0 || i + BATCH >= slices.length) {
+      console.log(
+        `[ingest] ${source}: ${Math.min(i + BATCH, slices.length)}/${slices.length} slices`,
+      );
     }
-  });
+  }
 
   return slices.length;
 }
 
 export async function ingestFeatures(
-  features: UasZoneFeature[],
+  features: import("@canifly/middleware").UasZoneFeature[],
   source: ZoneSource,
 ): Promise<number> {
   const now = new Date();

@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.0] — 2026-07-30
+
+### Added
+- Czechia live provider via ANS CR **aimgis.rlp.cz** ArcGIS (`anscr-client.ts`, backend label `aimgis`)
+- Shared PostGIS point/bbox helpers for Spain fallback
+
 ## [0.2.2] — 2026-07-30
 
 ### Added

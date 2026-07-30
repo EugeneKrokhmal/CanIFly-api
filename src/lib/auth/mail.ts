@@ -10,7 +10,7 @@ export type SendEmailInput = {
   text: string;
 };
 
-export type MailLocale = "es" | "en" | "pl";
+export type MailLocale = "es" | "en" | "pl" | "cs";
 
 export function appPublicUrl(): string {
   const raw =
@@ -26,7 +26,9 @@ export function mailFromAddress(): string {
 }
 
 export function normalizeMailLocale(value: unknown): MailLocale {
-  if (value === "en" || value === "pl" || value === "es") return value;
+  if (value === "en" || value === "pl" || value === "es" || value === "cs") {
+    return value;
+  }
   return "es";
 }
 
@@ -76,7 +78,7 @@ export async function sendEmail(input: SendEmailInput): Promise<void> {
 const COPY = {
   es: {
     subject: "Verifica tu email en CanIFly",
-    tagline: "Mapa de espacio aéreo UAS en España y Polonia",
+    tagline: "Mapa de espacio aéreo UAS en España, Chequia y Polonia",
     title: "Verifica tu email",
     hello: (name: string) => `Hola ${name},`,
     body: "Confirma tu cuenta de CanIFly para reportar obstáculos y zonas de vuelo en el mapa.",
@@ -90,7 +92,7 @@ const COPY = {
   },
   en: {
     subject: "Verify your CanIFly email",
-    tagline: "Spain & Poland UAS airspace map",
+    tagline: "Spain, Czechia & Poland UAS airspace map",
     title: "Verify your email",
     hello: (name: string) => `Hi ${name},`,
     body: "Confirm your CanIFly account to report obstacles and fly spots on the map.",
@@ -104,7 +106,7 @@ const COPY = {
   },
   pl: {
     subject: "Zweryfikuj e-mail w CanIFly",
-    tagline: "Mapa przestrzeni UAS Hiszpania i Polska",
+    tagline: "Mapa przestrzeni UAS Hiszpania, Czechy i Polska",
     title: "Zweryfikuj e-mail",
     hello: (name: string) => `Cześć ${name},`,
     body: "Potwierdź konto CanIFly, aby zgłaszać przeszkody i miejsca do lotów na mapie.",
@@ -116,12 +118,26 @@ const COPY = {
     text: (name: string, url: string) =>
       `Cześć ${name},\n\nPotwierdź konto CanIFly:\n${url}\n\nTen link wygasa po 24 godzinach.\n\nJeśli nie rejestrowałeś się, zignoruj tę wiadomość.\n\n— CanIFly · https://canifly.org`,
   },
+  cs: {
+    subject: "Ověřte e-mail v CanIFly",
+    tagline: "Mapa vzdušného prostoru UAS ve Španělsku, Česku a Polsku",
+    title: "Ověřte e-mail",
+    hello: (name: string) => `Ahoj ${name},`,
+    body: "Potvrďte účet CanIFly, abyste mohli nahlašovat překážky a místa k letu na mapě.",
+    cta: "Ověřit e-mail",
+    orPaste: "Nebo vložte tento odkaz do prohlížeče:",
+    expires:
+      "Tento odkaz vyprší za 24 hodin. Pokud jste se neregistrovali, e-mail můžete ignorovat.",
+    footer: "Pomůcka pro plánování, ne oficiální povolení",
+    text: (name: string, url: string) =>
+      `Ahoj ${name},\n\nPotvrďte účet CanIFly:\n${url}\n\nTento odkaz vyprší za 24 hodin.\n\nPokud jste se neregistrovali, e-mail ignorujte.\n\n— CanIFly · https://canifly.org`,
+  },
 } as const;
 
 const RESET_COPY = {
   es: {
     subject: "Restablece tu contraseña de CanIFly",
-    tagline: "Mapa de espacio aéreo UAS en España y Polonia",
+    tagline: "Mapa de espacio aéreo UAS en España, Chequia y Polonia",
     title: "Restablecer contraseña",
     hello: (name: string) => `Hola ${name},`,
     body: "Recibimos una solicitud para restablecer la contraseña de tu cuenta CanIFly.",
@@ -135,7 +151,7 @@ const RESET_COPY = {
   },
   en: {
     subject: "Reset your CanIFly password",
-    tagline: "Spain & Poland UAS airspace map",
+    tagline: "Spain, Czechia & Poland UAS airspace map",
     title: "Reset password",
     hello: (name: string) => `Hi ${name},`,
     body: "We received a request to reset the password for your CanIFly account.",
@@ -149,7 +165,7 @@ const RESET_COPY = {
   },
   pl: {
     subject: "Zresetuj hasło CanIFly",
-    tagline: "Mapa przestrzeni UAS Hiszpania i Polska",
+    tagline: "Mapa przestrzeni UAS Hiszpania, Czechy i Polska",
     title: "Reset hasła",
     hello: (name: string) => `Cześć ${name},`,
     body: "Otrzymaliśmy prośbę o zresetowanie hasła do Twojego konta CanIFly.",
@@ -160,6 +176,20 @@ const RESET_COPY = {
     footer: "Pomoc w planowaniu, nie oficjalne zezwolenie",
     text: (name: string, url: string) =>
       `Cześć ${name},\n\nZresetuj hasło CanIFly:\n${url}\n\nTen link wygasa po 24 godzinach.\n\nJeśli to nie Ty prosiłeś, zignoruj tę wiadomość.\n\n— CanIFly · https://canifly.org`,
+  },
+  cs: {
+    subject: "Obnovte heslo CanIFly",
+    tagline: "Mapa vzdušného prostoru UAS ve Španělsku, Česku a Polsku",
+    title: "Obnovení hesla",
+    hello: (name: string) => `Ahoj ${name},`,
+    body: "Obdrželi jsme žádost o obnovení hesla k vašemu účtu CanIFly.",
+    cta: "Obnovit heslo",
+    orPaste: "Nebo vložte tento odkaz do prohlížeče:",
+    expires:
+      "Tento odkaz vyprší za 24 hodin. Pokud jste o to nežádali, e-mail můžete ignorovat.",
+    footer: "Pomůcka pro plánování, ne oficiální povolení",
+    text: (name: string, url: string) =>
+      `Ahoj ${name},\n\nObnovte heslo CanIFly:\n${url}\n\nTento odkaz vyprší za 24 hodin.\n\nPokud jste o to nežádali, e-mail ignorujte.\n\n— CanIFly · https://canifly.org`,
   },
 } as const;
 

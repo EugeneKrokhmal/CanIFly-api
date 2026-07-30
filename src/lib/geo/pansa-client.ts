@@ -393,8 +393,8 @@ export function pansaScheduleState(
 
 /**
  * Whether a PANSA zone should drive Clear/Restricted/Prohibited for open
- * recreational status. Standing TRA/TSA (no activation window) are shown on
- * the map but do not force Restricted — they blanket large rural areas.
+ * recreational status. Standing TRA/TSA (no activation window) are omitted from
+ * the map as well — they blanket large rural areas without affecting flight status.
  */
 export function isPansaStatusRelevant(raw: PansaZoneRaw): boolean {
   if (isPansaFirWideAdvisory(raw)) return false;
@@ -427,7 +427,7 @@ export function isPansaStatusRelevant(raw: PansaZoneRaw): boolean {
   return true;
 }
 
-/** Map: all local geometries except country-scale FIR wash. */
+/** Map: geometries that overlap status logic (no standing TRA/TSA wash, etc.). */
 export function isPansaMapRelevant(raw: PansaZoneRaw): boolean {
   if (isPansaFirWideAdvisory(raw)) return false;
   const geom = raw.geojson;
@@ -437,7 +437,7 @@ export function isPansaMapRelevant(raw: PansaZoneRaw): boolean {
   if (isOversizedForMap(geom)) return false;
   // Skip expired scheduled shapes on the map too.
   if (pansaScheduleState(raw) === false) return false;
-  return true;
+  return isPansaStatusRelevant(raw);
 }
 
 function geometryContainsPoint(

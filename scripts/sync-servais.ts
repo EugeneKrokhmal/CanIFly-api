@@ -9,9 +9,7 @@
 import { config } from "dotenv";
 config({ path: ".env" });
 
-import {
-  arcgisFeatureToUasZone,
-} from "../src/lib/geo/normalize-slices";
+import { arcgisFeatureToUasZone, type UasZoneFeature } from "@canifly/middleware";
 import {
   EnaireFetchError,
   fetchServaisLayer,
@@ -19,7 +17,6 @@ import {
 } from "../src/lib/geo/enaire-client";
 import { ensurePostgisSchema, isDatabaseAvailable } from "../src/lib/db/client";
 import { ingestFeatures, getSliceCount } from "../src/lib/db/queries";
-import type { UasZoneFeature } from "../src/lib/geo/ed318-types";
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -39,49 +36,39 @@ async function main(): Promise<void> {
   try {
     layers = await listServaisLayers();
   } catch (err) {
-    console.error("Could not list servAIS layers:", err);
-    process.exit(1);
-    return;
+    if (err instanceof EnaireFetchError) {
+      console.error(`Failed to list layers: ${err.message} (${err.url})`);
+      process.exit(1);
+    }
+    throw err;
   }
 
-  if (onlyLayer !== undefined && !Number.isNaN(onlyLayer)) {
+  if (onlyLayer != null && !Number.isNaN(onlyLayer)) {
     layers = layers.filter((l) => l.id === onlyLayer);
   }
 
-  console.log(
-    `Syncing ${layers.length} layer(s): ${layers.map((l) => `${l.id}:${l.name}`).join(", ")}`,
-  );
-
-  const allFeatures: UasZoneFeature[] = [];
-
+  const all: UasZoneFeature[] = [];
   for (const layer of layers) {
     try {
       console.log(`Fetching layer ${layer.id} (${layer.name})…`);
-      const geoFeatures = await fetchServaisLayer(layer.id);
-      console.log(`  ${geoFeatures.length} ArcGIS features`);
-      for (let i = 0; i < geoFeatures.length; i++) {
-        const mapped = arcgisFeatureToUasZone(
-          geoFeatures[i],
-          `servais-${layer.id}-${i}`,
-        );
-        if (mapped) allFeatures.push(mapped);
+      const pages = await fetchServaisLayer(layer.id);
+      for (const page of pages) {
+        for (const f of page.features ?? []) {
+          const zone = arcgisFeatureToUasZone(f, "servais");
+          if (zone) all.push(zone);
+        }
       }
+      console.log(`  Features so far: ${all.length}`);
     } catch (err) {
-      if (err instanceof EnaireFetchError) {
-        console.error(`  Layer ${layer.id} failed: ${err.message} (${err.url})`);
-      } else {
-        console.error(`  Layer ${layer.id} failed:`, err);
-      }
+      console.error(
+        `  Layer ${layer.id} failed:`,
+        err instanceof Error ? err.message : err,
+      );
     }
   }
 
-  if (allFeatures.length === 0) {
-    console.warn("No features ingested from servAIS.");
-    process.exit(0);
-  }
-
-  const n = await ingestFeatures(allFeatures, "servais");
-  console.log(`Inserted ${n} servais slices from ${allFeatures.length} zones.`);
+  const n = await ingestFeatures(all, "servais");
+  console.log(`Inserted ${n} servais slices.`);
   const total = await getSliceCount();
   console.log(`Total slices (${total.backend}): ${total.count}`);
 }

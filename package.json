@@ -1,6 +1,6 @@
 {
   "name": "@canifly/api",
-  "version": "0.2.2",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,6 +9,7 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:migrate": "tsx -e \"import { ensurePostgisSchema } from './src/lib/db/client.ts'; ensurePostgisSchema().then(() => console.log('ok')).catch((e) => { console.error(e); process.exit(1); })\"",
+    "ingest:ed318": "tsx scripts/ingest-ed318.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
