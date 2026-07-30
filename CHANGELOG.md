@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1] — 2026-07-30
+
+### Added
+- `GET /api/pilots/top` — leaders by map pins left (empty list when DB is down)
+
+### Fixed
+- Local Docker PostGIS: skip TLS for localhost so the API can reach the DB
+
 ## [0.2.0] — 2026-07-30
 
 ### Added

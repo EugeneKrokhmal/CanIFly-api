@@ -4,11 +4,41 @@ import { ensurePostgisSchema, isDatabaseAvailable } from "../lib/db/client";
 import {
   getPilotProfile,
   listObstaclesByUser,
+  listTopPilotsByPinCount,
 } from "../lib/db/obstacle-queries";
 
 export const pilotsRoutes = new Hono();
 
 const idSchema = z.string().uuid();
+
+const topQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).optional().default(20),
+});
+
+/** Top pilots by pins left — must stay before `/:id`. */
+pilotsRoutes.get("/top", async (c) => {
+  try {
+    // Decorative: empty list when DB is down (don't 503 the map UI).
+    if (!(await isDatabaseAvailable())) {
+      return c.json({ pilots: [] });
+    }
+
+    await ensurePostgisSchema();
+
+    const parsed = topQuerySchema.safeParse({
+      limit: c.req.query("limit") ?? undefined,
+    });
+    if (!parsed.success) {
+      return c.json({ error: "Invalid query" }, 400);
+    }
+
+    const pilots = await listTopPilotsByPinCount(parsed.data.limit);
+    return c.json({ pilots });
+  } catch (err) {
+    console.error("[pilots/GET /top]", err);
+    return c.json({ pilots: [] });
+  }
+});
 
 pilotsRoutes.get("/:id", async (c) => {
   try {

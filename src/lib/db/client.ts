@@ -18,6 +18,18 @@ declare global {
   var __caniflySchemaReady: boolean | undefined;
 }
 
+function useSsl(url: string): boolean | "require" {
+  // Local Docker PostGIS has no TLS; Supabase / hosted Postgres need it.
+  try {
+    const host = new URL(url).hostname;
+    if (host === "localhost" || host === "127.0.0.1") return false;
+  } catch {
+    /* keep require for odd URLs */
+  }
+  if (/sslmode=disable/i.test(url)) return false;
+  return "require";
+}
+
 function createClient() {
   // Supabase transaction pooler (:6543) does not support prepared statements.
   // Session pooler / direct (:5432) works either way; prepare:false is safe for both.
@@ -26,7 +38,7 @@ function createClient() {
     idle_timeout: 20,
     connect_timeout: 10,
     prepare: false,
-    ssl: "require",
+    ssl: useSsl(connectionString),
   });
   const db = drizzle(sql, { schema });
   return { sql, db };

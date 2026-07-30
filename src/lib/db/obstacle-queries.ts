@@ -291,6 +291,44 @@ export async function setObstacleVote(
   return getObstacleVoteSummary(obstacleId, userId);
 }
 
+export type TopPilotRow = {
+  id: string;
+  name: string;
+  avatarUrl: string | null;
+  pinCount: number;
+  rank: number;
+};
+
+/** Top community reporters by number of map pins left. */
+export async function listTopPilotsByPinCount(
+  limit = 20,
+): Promise<TopPilotRow[]> {
+  if (!(await isDatabaseAvailable())) return [];
+  const capped = Math.min(Math.max(1, Math.floor(limit)), 50);
+  const { db } = getDb();
+  const rows = await db
+    .select({
+      id: users.id,
+      name: users.name,
+      email: users.email,
+      avatarUrl: users.avatarUrl,
+      pinCount: sql<number>`count(${obstacles.id})::int`,
+    })
+    .from(obstacles)
+    .innerJoin(users, eq(obstacles.userId, users.id))
+    .groupBy(users.id, users.name, users.email, users.avatarUrl)
+    .orderBy(desc(sql`count(${obstacles.id})`), users.id)
+    .limit(capped);
+
+  return rows.map((row, i) => ({
+    id: row.id,
+    name: displayName(row.name, row.email),
+    avatarUrl: row.avatarUrl,
+    pinCount: row.pinCount,
+    rank: i + 1,
+  }));
+}
+
 export async function getPilotProfile(userId: string): Promise<{
   id: string;
   name: string;
