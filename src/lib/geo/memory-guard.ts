@@ -1,6 +1,7 @@
 /**
  * Soft heap guard for in-memory national GeoJSON caches on small hosts (Render free).
- * Exit 134 / SIGABRT is often the OOM killer after FOCA/FR national warm.
+ * Exit 134 / SIGABRT is often the Linux OOM killer (RSS), not V8 heap alone —
+ * stacked nationals (DK/CH/PT/AT/IE/LV) + DIPUL's many parallel WFS buffers.
  */
 
 const clearers = new Set<() => void>();
@@ -15,6 +16,12 @@ function hardMb(): number {
   return Number.isFinite(n) && n > softMb() ? n : Math.max(softMb() + 80, 340);
 }
 
+/** Leave headroom under hard RSS for concurrent fetch/parse buffers (e.g. dipul). */
+function rssSoftMb(): number {
+  const n = Number(process.env.GEO_RSS_SOFT_MB ?? hardMb() - 60);
+  return Number.isFinite(n) && n > 96 ? n : Math.max(hardMb() - 60, 96);
+}
+
 export function heapUsedMb(): number {
   return process.memoryUsage().heapUsed / (1024 * 1024);
 }
@@ -23,13 +30,13 @@ export function heapRssMb(): number {
   return process.memoryUsage().rss / (1024 * 1024);
 }
 
-/** True when we can still load another national dataset. */
+/** True when we can still load another national dataset or a heavy WFS fan-out. */
 export function canAllocateHeavyCache(): boolean {
-  return heapUsedMb() < softMb();
+  return heapUsedMb() < softMb() && heapRssMb() < rssSoftMb();
 }
 
 export function underHardHeapLimit(): boolean {
-  return heapUsedMb() < hardMb();
+  return heapUsedMb() < hardMb() && heapRssMb() < hardMb();
 }
 
 export function registerGeoCacheClearer(clear: () => void): void {
@@ -66,6 +73,7 @@ export function memoryHealth(): {
   heapUsedMb: number;
   rssMb: number;
   softMb: number;
+  rssSoftMb: number;
   hardMb: number;
   nationalMapWarm: boolean;
 } {
@@ -73,6 +81,7 @@ export function memoryHealth(): {
     heapUsedMb: Math.round(heapUsedMb()),
     rssMb: Math.round(heapRssMb()),
     softMb: softMb(),
+    rssSoftMb: Math.round(rssSoftMb()),
     hardMb: hardMb(),
     nationalMapWarm: nationalMapWarmEnabled(),
   };

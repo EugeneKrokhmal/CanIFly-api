@@ -18,6 +18,8 @@
 - LuftVO-oriented open-category restriction mapping (airports / ED-R / military → PROHIBITED)
 
 ### Changed
+- Memory guard: treat high RSS (not only V8 heap) as pressure; free geo caches before DIPUL
+- DIPUL: cap WFS layer concurrency to 4 (was unbounded Promise.all) to avoid Render exit 134 when loading Germany
 - Czechia aimgis: AD_perimeter / LKR314 inner zones and military ODOS map to PROHIBITED; `mapStatus` from `zoneVisualStatus`
 
 ## [0.3.0] — 2026-07-30

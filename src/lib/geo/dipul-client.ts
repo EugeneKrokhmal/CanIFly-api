@@ -14,12 +14,40 @@ import {
   type UasRestriction,
 } from "@canifly/middleware";
 import { ViewportLayerCache } from "./geojson-bbox-cache";
+import { ensureHeapForHeavyCache } from "./memory-guard";
 
 const DIPUL_WFS = "https://uas-betrieb.de/geoservices/dipul/wfs";
 
 /** Skip continent-scale paint queries (°). */
 const MAX_MAP_BBOX_DEG = 3.5;
 const CLAMP_MAP_BBOX_DEG = 2.0;
+
+/**
+ * Cap parallel WFS layer fetches. ~30 layers at once spikes RSS on small hosts
+ * (Render free exit 134) when national GeoJSON caches are already warm.
+ */
+const WFS_CONCURRENCY = 4;
+
+async function mapConcurrent<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  fn: (item: T, index: number) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let next = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, Math.max(items.length, 1)) },
+    async () => {
+      while (true) {
+        const i = next++;
+        if (i >= items.length) return;
+        results[i] = await fn(items[i]!, i);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
+}
 
 /**
  * Status layers (point). Includes residential parcels — important in DE open category.
@@ -302,44 +330,45 @@ export async function queryDipulPoint(
   lat: number,
   lng: number,
 ): Promise<MatchedZone[]> {
+  // Free stacked nationals if near soft/RSS limit before ~30 layer fan-out.
+  ensureHeapForHeavyCache("dipul-point");
+
   const pad = 0.0004; // ~40 m
   const matches: MatchedZone[] = [];
   const seen = new Set<string>();
 
-  await Promise.all(
-    STATUS_TYPES.map(async (typeName) => {
-      const url = buildBboxUrl(
-        typeName,
-        lng - pad,
-        lat - pad,
-        lng + pad,
-        lat + pad,
-        30,
-      );
-      try {
-        const fc = await fetchGeoJson(url, 6_000);
-        for (const feature of fc.features ?? []) {
-          const zone = propsToMatchedZone(
-            (feature.properties ?? {}) as DipulProps,
-          );
-          if (!zone) continue;
-          const key = `${zone.identifier}:${zone.name}`;
-          if (seen.has(key)) continue;
-          seen.add(key);
-          matches.push(zone);
-        }
-      } catch (err) {
-        if (
-          isTimeout(err) ||
-          (err instanceof DipulFetchError && isTimeout(err.cause))
-        ) {
-          console.warn(`[dipul] ${typeName} point timeout`);
-        } else {
-          console.warn(`[dipul] ${typeName} point failed`, err);
-        }
+  await mapConcurrent(STATUS_TYPES, WFS_CONCURRENCY, async (typeName) => {
+    const url = buildBboxUrl(
+      typeName,
+      lng - pad,
+      lat - pad,
+      lng + pad,
+      lat + pad,
+      30,
+    );
+    try {
+      const fc = await fetchGeoJson(url, 6_000);
+      for (const feature of fc.features ?? []) {
+        const zone = propsToMatchedZone(
+          (feature.properties ?? {}) as DipulProps,
+        );
+        if (!zone) continue;
+        const key = `${zone.identifier}:${zone.name}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        matches.push(zone);
       }
-    }),
-  );
+    } catch (err) {
+      if (
+        isTimeout(err) ||
+        (err instanceof DipulFetchError && isTimeout(err.cause))
+      ) {
+        console.warn(`[dipul] ${typeName} point timeout`);
+      } else {
+        console.warn(`[dipul] ${typeName} point failed`, err);
+      }
+    }
+  });
 
   return matches;
 }
@@ -359,83 +388,83 @@ export async function queryDipulBbox(
     return { type: "FeatureCollection", features: [] };
   }
 
+  ensureHeapForHeavyCache("dipul-bbox");
+
   const perLayer = Math.max(15, Math.floor(limit / MAP_TYPES.length));
   const merged: GeoJSON.Feature[] = [];
   const seen = new Set<string>();
 
-  await Promise.all(
-    MAP_TYPES.map(async (typeName) => {
-      let layerFeatures: GeoJSON.Feature[] = [];
-      try {
-        layerFeatures = await viewportLayerCache.get(
-          typeName,
-          clamped.west,
-          clamped.south,
-          clamped.east,
-          clamped.north,
-          async () => {
-            const url = buildBboxUrl(
-              typeName,
-              clamped.west,
-              clamped.south,
-              clamped.east,
-              clamped.north,
-              perLayer,
+  await mapConcurrent(MAP_TYPES, WFS_CONCURRENCY, async (typeName) => {
+    let layerFeatures: GeoJSON.Feature[] = [];
+    try {
+      layerFeatures = await viewportLayerCache.get(
+        typeName,
+        clamped.west,
+        clamped.south,
+        clamped.east,
+        clamped.north,
+        async () => {
+          const url = buildBboxUrl(
+            typeName,
+            clamped.west,
+            clamped.south,
+            clamped.east,
+            clamped.north,
+            perLayer,
+          );
+          const fc = await fetchGeoJson(url, 8_000);
+          const out: GeoJSON.Feature[] = [];
+          const layerSeen = new Set<string>();
+          for (const feature of fc.features ?? []) {
+            const zone = propsToMatchedZone(
+              (feature.properties ?? {}) as DipulProps,
             );
-            const fc = await fetchGeoJson(url, 8_000);
-            const out: GeoJSON.Feature[] = [];
-            const layerSeen = new Set<string>();
-            for (const feature of fc.features ?? []) {
-              const zone = propsToMatchedZone(
-                (feature.properties ?? {}) as DipulProps,
-              );
-              if (!zone || !feature.geometry) continue;
-              const key = `${zone.identifier}:${zone.name}`;
-              if (layerSeen.has(key)) continue;
-              layerSeen.add(key);
-              out.push({
-                type: "Feature",
-                id: zone.identifier,
-                geometry: feature.geometry,
-                properties: {
-                  identifier: zone.identifier,
-                  name: zone.name,
-                  restriction: zone.restriction,
-                  reason: zone.reason,
-                  source: zone.source,
-                  country: "DE",
-                  lowerLimitM: zone.lowerLimitM,
-                  upperLimitM: zone.upperLimitM,
-                  lowerRef: zone.lowerRef,
-                  upperRef: zone.upperRef,
-                  message: zone.message,
-                  mapStatus: zoneVisualStatus(zone),
-                },
-              });
-            }
-            return out;
-          },
-        );
-      } catch (err) {
-        if (
-          isTimeout(err) ||
-          (err instanceof DipulFetchError && isTimeout(err.cause))
-        ) {
-          console.warn(`[dipul] ${typeName} bbox timeout`);
-        } else {
-          console.warn(`[dipul] ${typeName} bbox failed`, err);
-        }
-        return;
+            if (!zone || !feature.geometry) continue;
+            const key = `${zone.identifier}:${zone.name}`;
+            if (layerSeen.has(key)) continue;
+            layerSeen.add(key);
+            out.push({
+              type: "Feature",
+              id: zone.identifier,
+              geometry: feature.geometry,
+              properties: {
+                identifier: zone.identifier,
+                name: zone.name,
+                restriction: zone.restriction,
+                reason: zone.reason,
+                source: zone.source,
+                country: "DE",
+                lowerLimitM: zone.lowerLimitM,
+                upperLimitM: zone.upperLimitM,
+                lowerRef: zone.lowerRef,
+                upperRef: zone.upperRef,
+                message: zone.message,
+                mapStatus: zoneVisualStatus(zone),
+              },
+            });
+          }
+          return out;
+        },
+      );
+    } catch (err) {
+      if (
+        isTimeout(err) ||
+        (err instanceof DipulFetchError && isTimeout(err.cause))
+      ) {
+        console.warn(`[dipul] ${typeName} bbox timeout`);
+      } else {
+        console.warn(`[dipul] ${typeName} bbox failed`, err);
       }
-      for (const f of layerFeatures) {
-        const p = (f.properties ?? {}) as { identifier?: string; name?: string };
-        const key = `${p.identifier ?? ""}:${p.name ?? ""}`;
-        if (key !== ":" && seen.has(key)) continue;
-        if (key !== ":") seen.add(key);
-        merged.push(f);
-      }
-    }),
-  );
+      return;
+    }
+    for (const f of layerFeatures) {
+      const p = (f.properties ?? {}) as { identifier?: string; name?: string };
+      const key = `${p.identifier ?? ""}:${p.name ?? ""}`;
+      if (key !== ":" && seen.has(key)) continue;
+      if (key !== ":") seen.add(key);
+      merged.push(f);
+    }
+  });
 
   return {
     type: "FeatureCollection",
