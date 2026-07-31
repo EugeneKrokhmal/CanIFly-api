@@ -15,6 +15,7 @@ import {
   fetchServaisLayer,
   listServaisLayers,
 } from "../lib/geo/enaire-client";
+import { fetchDipulNationalZones } from "../lib/geo/dipul-client";
 import { FIXTURE_ZONES } from "../lib/geo/fixtures";
 import {
   seedPilots,
@@ -25,7 +26,7 @@ export const adminRoutes = new Hono();
 
 const bodySchema = z.object({
   sources: z
-    .array(z.enum(["fixtures", "ed318", "servais"]))
+    .array(z.enum(["fixtures", "ed318", "servais", "dipul"]))
     .default(["fixtures", "ed318"]),
 });
 
@@ -111,6 +112,23 @@ adminRoutes.post("/ingest", async (c) => {
       } catch (err) {
         errors.push(
           `servais: ${err instanceof Error ? err.message : "error"}`,
+        );
+      }
+    }
+
+    if (parsed.data.sources.includes("dipul")) {
+      try {
+        const all = await fetchDipulNationalZones((p) => {
+          if (p.done === p.total || p.done % 25 === 0) {
+            console.log(
+              `[admin/ingest dipul] ${p.done}/${p.total} · ${p.zones} zones`,
+            );
+          }
+        });
+        counts.dipul = await ingestFeatures(all, "dipul");
+      } catch (err) {
+        errors.push(
+          `dipul: ${err instanceof Error ? err.message : "error"}`,
         );
       }
     }

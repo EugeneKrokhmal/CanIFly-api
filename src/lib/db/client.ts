@@ -95,7 +95,7 @@ async function runPostgisSchemaMigrations(): Promise<void> {
     END $$;
   `;
 
-  for (const value of ["pansa", "anscr"] as const) {
+  for (const value of ["pansa", "anscr", "dipul"] as const) {
     await sql.unsafe(`
       DO $$ BEGIN
         ALTER TYPE zone_source ADD VALUE IF NOT EXISTS '${value}';

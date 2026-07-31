@@ -32,7 +32,9 @@ export function rowToMatchedZone(
   if (countryRaw === "ESP" || countryRaw === "ES") country = "ES";
   else if (countryRaw === "CZE" || countryRaw === "CZ") country = "CZ";
   else if (countryRaw === "POL" || countryRaw === "PL") country = "PL";
+  else if (countryRaw === "DEU" || countryRaw === "DE") country = "DE";
   else if (row.source === "anscr") country = "CZ";
+  else if (row.source === "dipul") country = "DE";
   else if (
     row.source === "aero" ||
     row.source === "urbano" ||

@@ -12,6 +12,7 @@ import {
   zoneVisualStatus,
   type MatchedZone,
   type UasRestriction,
+  type UasZoneFeature,
 } from "@canifly/middleware";
 import { ViewportLayerCache } from "./geojson-bbox-cache";
 import { ensureHeapForHeavyCache } from "./memory-guard";
@@ -27,6 +28,19 @@ const CLAMP_MAP_BBOX_DEG = 2.0;
  * (Render free exit 134) when national GeoJSON caches are already warm.
  */
 const WFS_CONCURRENCY = 4;
+
+/** Germany AABB for national ingest tiles (middleware GERMANY_COUNTRY.bounds). */
+const DE_BOUNDS = {
+  minLng: 5.87,
+  maxLng: 15.04,
+  minLat: 47.27,
+  maxLat: 55.1,
+} as const;
+
+/** Tile size for national WFS crawl (°). Keep ≤ live clamp. */
+const INGEST_TILE_DEG = 2.0;
+const INGEST_PAGE_SIZE = 5_000;
+const INGEST_CONCURRENCY = 3;
 
 async function mapConcurrent<T, R>(
   items: readonly T[],
@@ -88,6 +102,9 @@ const STATUS_TYPES: readonly string[] = [
 ];
 
 const MAP_TYPES = STATUS_TYPES.filter((t) => t !== "dipul:wohngrundstuecke");
+
+/** Map layers used for PostGIS national sync (excludes dense residential parcels). */
+export const DIPUL_INGEST_TYPES = MAP_TYPES;
 
 const viewportLayerCache = new ViewportLayerCache();
 
@@ -470,4 +487,167 @@ export async function queryDipulBbox(
     type: "FeatureCollection",
     features: merged.slice(0, limit),
   };
+}
+
+/** Convert a dipul WFS feature into an ED-318-shaped zone for PostGIS ingest. */
+export function dipulFeatureToUasZone(
+  feature: GeoJSON.Feature,
+): UasZoneFeature | null {
+  const geom = feature.geometry;
+  if (
+    !geom ||
+    (geom.type !== "Polygon" && geom.type !== "MultiPolygon")
+  ) {
+    return null;
+  }
+  const zone = propsToMatchedZone((feature.properties ?? {}) as DipulProps);
+  if (!zone) return null;
+  const typeCode = String(
+    (feature.properties as DipulProps | null)?.type_code ?? "COMMON",
+  );
+  return {
+    identifier: zone.identifier,
+    country: "DEU",
+    name: zone.name,
+    type: typeCode,
+    restriction: zone.restriction,
+    reason: zone.reason,
+    message: zone.message,
+    geometry: [
+      {
+        upperLimit: zone.upperLimitM,
+        lowerLimit: zone.lowerLimitM,
+        uomDimensions: "M",
+        upperVerticalReference: zone.upperRef,
+        lowerVerticalReference: zone.lowerRef,
+        horizontalProjection: geom,
+      },
+    ],
+  };
+}
+
+function buildIngestTiles(): Array<{
+  west: number;
+  south: number;
+  east: number;
+  north: number;
+}> {
+  const tiles: Array<{
+    west: number;
+    south: number;
+    east: number;
+    north: number;
+  }> = [];
+  for (
+    let west = DE_BOUNDS.minLng;
+    west < DE_BOUNDS.maxLng;
+    west += INGEST_TILE_DEG
+  ) {
+    for (
+      let south = DE_BOUNDS.minLat;
+      south < DE_BOUNDS.maxLat;
+      south += INGEST_TILE_DEG
+    ) {
+      tiles.push({
+        west,
+        south,
+        east: Math.min(west + INGEST_TILE_DEG, DE_BOUNDS.maxLng),
+        north: Math.min(south + INGEST_TILE_DEG, DE_BOUNDS.maxLat),
+      });
+    }
+  }
+  return tiles;
+}
+
+async function fetchDipulTileLayer(
+  typeName: string,
+  west: number,
+  south: number,
+  east: number,
+  north: number,
+): Promise<GeoJSON.Feature[]> {
+  const out: GeoJSON.Feature[] = [];
+  let startIndex = 0;
+  for (;;) {
+    const params = new URLSearchParams({
+      service: "WFS",
+      version: "2.0.0",
+      request: "GetFeature",
+      typeNames: typeName,
+      srsName: "EPSG:4326",
+      bbox: `${west},${south},${east},${north},EPSG:4326`,
+      count: String(INGEST_PAGE_SIZE),
+      startIndex: String(startIndex),
+      outputFormat: "application/json",
+    });
+    const url = `${DIPUL_WFS}?${params}`;
+    const fc = await fetchGeoJson(url, 45_000);
+    const batch = fc.features ?? [];
+    out.push(...batch);
+    if (batch.length < INGEST_PAGE_SIZE) break;
+    startIndex += batch.length;
+    // Safety: avoid runaway pagination on broken servers.
+    if (startIndex > 50_000) break;
+  }
+  return out;
+}
+
+export type DipulIngestProgress = {
+  done: number;
+  total: number;
+  typeName: string;
+  zones: number;
+};
+
+/**
+ * Crawl Germany dipul MAP layers into deduped UasZoneFeatures for PostGIS.
+ * Skips wohngrundstuecke (too dense for national store / map).
+ */
+export async function fetchDipulNationalZones(
+  onProgress?: (p: DipulIngestProgress) => void,
+): Promise<UasZoneFeature[]> {
+  const tiles = buildIngestTiles();
+  const jobs: Array<{ typeName: string; tile: (typeof tiles)[number] }> = [];
+  for (const typeName of DIPUL_INGEST_TYPES) {
+    for (const tile of tiles) {
+      jobs.push({ typeName, tile });
+    }
+  }
+
+  const byId = new Map<string, UasZoneFeature>();
+  let done = 0;
+
+  await mapConcurrent(jobs, INGEST_CONCURRENCY, async (job) => {
+    try {
+      const features = await fetchDipulTileLayer(
+        job.typeName,
+        job.tile.west,
+        job.tile.south,
+        job.tile.east,
+        job.tile.north,
+      );
+      for (const f of features) {
+        const zone = dipulFeatureToUasZone(f);
+        if (!zone) continue;
+        if (!byId.has(zone.identifier)) {
+          byId.set(zone.identifier, zone);
+        }
+      }
+    } catch (err) {
+      console.warn(
+        `[dipul-ingest] ${job.typeName} ${job.tile.west},${job.tile.south} failed`,
+        err instanceof Error ? err.message : err,
+      );
+    } finally {
+      done += 1;
+      onProgress?.({
+        done,
+        total: jobs.length,
+        typeName: job.typeName,
+        zones: byId.size,
+      });
+    }
+  });
+
+  return [...byId.values()];
 }

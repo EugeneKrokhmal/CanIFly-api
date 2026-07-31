@@ -45,7 +45,9 @@ async function querySpainFallbacks(
   lng: number,
   started: number,
 ): Promise<{ zones: MatchedZone[]; meta: QueryMeta }> {
-  const result = await queryPostgisPoint(lat, lng, { fallbackCountry: "ES" });
+  const result = await queryPostgisPoint(lat, lng, {
+    fallbackCountry: "ES",
+  });
   return {
     zones: result.zones,
     meta: {
@@ -53,6 +55,26 @@ async function querySpainFallbacks(
       dataVersion: result.dataVersion,
       backend: result.backend,
       country: "ES",
+    },
+  };
+}
+
+async function queryGermanyFallbacks(
+  lat: number,
+  lng: number,
+  started: number,
+): Promise<{ zones: MatchedZone[]; meta: QueryMeta }> {
+  const result = await queryPostgisPoint(lat, lng, {
+    source: "dipul",
+    fallbackCountry: "DE",
+  });
+  return {
+    zones: result.zones,
+    meta: {
+      queryMs: Math.round(performance.now() - started),
+      dataVersion: result.dataVersion,
+      backend: result.backend,
+      country: "DE",
     },
   };
 }
@@ -112,6 +134,9 @@ export async function queryPointIntersects(
   }
   if (country === "ES") {
     return querySpainFallbacks(lat, lng, started);
+  }
+  if (country === "DE") {
+    return queryGermanyFallbacks(lat, lng, started);
   }
 
   return {
@@ -232,6 +257,41 @@ async function querySpainBboxFallback(
   };
 }
 
+async function queryGermanyBboxFallback(
+  west: number,
+  south: number,
+  east: number,
+  north: number,
+  profile: DroneProfile,
+  altitudeAgl: number,
+  limit: number,
+  started: number,
+): Promise<{ collection: GeoJSON.FeatureCollection; meta: QueryMeta }> {
+  const result = await queryPostgisBbox(west, south, east, north, {
+    source: "dipul",
+    fallbackCountry: "DE",
+    limit,
+  });
+  const collection: GeoJSON.FeatureCollection = {
+    type: "FeatureCollection",
+    features: filterCollection(
+      { type: "FeatureCollection", features: result.features },
+      profile,
+      altitudeAgl,
+    ),
+  };
+  return {
+    collection,
+    meta: {
+      queryMs: Math.round(performance.now() - started),
+      dataVersion: result.dataVersion,
+      backend: result.backend === "postgis" ? "postgis" : result.backend,
+      country: "DE",
+      countries: ["DE"],
+    },
+  };
+}
+
 export async function queryZonesInBbox(
   west: number,
   south: number,
@@ -303,9 +363,24 @@ async function queryZonesInBboxLive(
 
   const countries = [country];
 
-  // Spain map: PostGIS first (synced servAIS), live servAIS only when PostGIS is empty.
+  // Spain / Germany map: PostGIS first (synced), live WFS only when empty.
   if (country === "ES") {
     const postgis = await querySpainBboxFallback(
+      west,
+      south,
+      east,
+      north,
+      profile,
+      altitudeAgl,
+      limit,
+      started,
+    );
+    if (postgis.collection.features.length > 0) {
+      return postgis;
+    }
+  }
+  if (country === "DE") {
+    const postgis = await queryGermanyBboxFallback(
       west,
       south,
       east,

@@ -79,7 +79,7 @@ export type LiveBackendLabel =
 export const LIVE_ONLY_COUNTRIES = new Set<CountryId>([
   "PL",
   "CZ",
-  "DE",
+  // DE is PostGIS-first for map (synced dipul); point stays live with PostGIS fallback.
   "FR",
   "DK",
   "CH",

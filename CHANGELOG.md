@@ -18,9 +18,13 @@
 - LuftVO-oriented open-category restriction mapping (airports / ED-R / military → PROHIBITED)
 
 ### Changed
+- Germany map: PostGIS-first via synced dipul (`npm run sync:dipul` / admin `sources:["dipul"]`); live WFS only when empty
 - Memory guard: treat high RSS (not only V8 heap) as pressure; free geo caches before DIPUL
 - DIPUL: cap WFS layer concurrency to 4 (was unbounded Promise.all) to avoid Render exit 134 when loading Germany
 - Czechia aimgis: AD_perimeter / LKR314 inner zones and military ODOS map to PROHIBITED; `mapStatus` from `zoneVisualStatus`
+
+### Added
+- `scripts/sync-dipul.ts` + admin ingest source `dipul` (tiled national WFS → PostGIS, skips wohngrundstuecke)
 
 ## [0.3.0] — 2026-07-30
 

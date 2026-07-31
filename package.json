@@ -11,6 +11,7 @@
     "db:migrate": "tsx -e \"import { ensurePostgisSchema } from './src/lib/db/client.ts'; ensurePostgisSchema().then(() => console.log('ok')).catch((e) => { console.error(e); process.exit(1); })\"",
     "ingest:ed318": "tsx scripts/ingest-ed318.ts",
     "sync:servais": "tsx scripts/sync-servais.ts",
+    "sync:dipul": "tsx scripts/sync-dipul.ts",
     "seed:pilots": "tsx scripts/seed-pilots.ts",
     "typecheck": "tsc --noEmit"
   },
