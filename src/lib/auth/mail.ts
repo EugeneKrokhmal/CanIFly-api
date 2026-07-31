@@ -51,6 +51,11 @@ export function resetPasswordUrl(locale: MailLocale, token: string): string {
   return `${appPublicUrl()}${path}?token=${encodeURIComponent(token)}`;
 }
 
+export function appHomeUrl(locale: MailLocale): string {
+  const base = appPublicUrl();
+  return locale === "es" ? base : `${base}/${locale}`;
+}
+
 export async function sendEmail(input: SendEmailInput): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY?.trim();
 
@@ -397,6 +402,146 @@ export function resetPasswordEmailContent(opts: {
               <p style="margin:0;font-size:12px;line-height:1.5;color:#b0b0b0;">
                 ${escapeHtml(t.expires)}
               </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:20px 28px 28px 28px;font-family:system-ui,-apple-system,sans-serif;border-top:1px solid #f0f0f0;">
+              <p style="margin:0;font-size:12px;color:#b0b0b0;">
+                <a href="${site}" style="color:#717171;text-decoration:none;font-weight:600;">canifly.org</a>
+                · ${escapeHtml(t.footer)}
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+  `.trim();
+
+  return { subject, html, text };
+}
+
+const WELCOME_COPY = {
+  es: {
+    subject: "Bienvenido a CanIFly",
+    tagline: "Mapa de espacio aéreo UAS en Europa",
+    title: "¡Bienvenido!",
+    hello: (name: string) => `Hola ${name},`,
+    body: "Tu cuenta está lista. Comprueba si puedes volar en el mapa, guarda tus spots favoritos y conecta con otros pilotos.",
+    cta: "Abrir el mapa",
+    footer: "Ayuda de planificación, no una autorización oficial",
+    text: (name: string, url: string) =>
+      `Hola ${name},\n\nTu cuenta CanIFly está lista.\n\nAbre el mapa: ${url}\n\n— CanIFly · https://canifly.org`,
+  },
+  en: {
+    subject: "Welcome to CanIFly",
+    tagline: "UAS airspace map for Europe",
+    title: "Welcome!",
+    hello: (name: string) => `Hi ${name},`,
+    body: "Your account is ready. Check whether you can fly on the map, save favourite spots, and connect with other pilots.",
+    cta: "Open the map",
+    footer: "Planning aid, not official clearance",
+    text: (name: string, url: string) =>
+      `Hi ${name},\n\nYour CanIFly account is ready.\n\nOpen the map: ${url}\n\n— CanIFly · https://canifly.org`,
+  },
+  de: {
+    subject: "Willkommen bei CanIFly",
+    tagline: "UAS-Luftraumkarte für Europa",
+    title: "Willkommen!",
+    hello: (name: string) => `Hallo ${name},`,
+    body: "Dein Konto ist bereit. Prüfe auf der Karte, ob du fliegen darfst, speichere Lieblingsspots und vernetze dich mit anderen Piloten.",
+    cta: "Karte öffnen",
+    footer: "Planungshilfe, keine offizielle Freigabe",
+    text: (name: string, url: string) =>
+      `Hallo ${name},\n\nDein CanIFly-Konto ist bereit.\n\nKarte öffnen: ${url}\n\n— CanIFly · https://canifly.org`,
+  },
+  fr: {
+    subject: "Bienvenue sur CanIFly",
+    tagline: "Carte d’espace aérien UAS pour l’Europe",
+    title: "Bienvenue !",
+    hello: (name: string) => `Bonjour ${name},`,
+    body: "Votre compte est prêt. Vérifiez sur la carte si vous pouvez voler, enregistrez vos spots favoris et échangez avec d’autres pilotes.",
+    cta: "Ouvrir la carte",
+    footer: "Aide à la planification, pas une autorisation officielle",
+    text: (name: string, url: string) =>
+      `Bonjour ${name},\n\nVotre compte CanIFly est prêt.\n\nOuvrir la carte : ${url}\n\n— CanIFly · https://canifly.org`,
+  },
+  pl: {
+    subject: "Witamy w CanIFly",
+    tagline: "Mapa przestrzeni UAS dla Europy",
+    title: "Witamy!",
+    hello: (name: string) => `Cześć ${name},`,
+    body: "Twoje konto jest gotowe. Sprawdź na mapie, czy możesz latać, zapisuj ulubione miejsca i poznawaj innych pilotów.",
+    cta: "Otwórz mapę",
+    footer: "Pomoc w planowaniu, nie oficjalne zezwolenie",
+    text: (name: string, url: string) =>
+      `Cześć ${name},\n\nTwoje konto CanIFly jest gotowe.\n\nOtwórz mapę: ${url}\n\n— CanIFly · https://canifly.org`,
+  },
+  cs: {
+    subject: "Vítejte v CanIFly",
+    tagline: "Mapa vzdušného prostoru UAS pro Evropu",
+    title: "Vítejte!",
+    hello: (name: string) => `Ahoj ${name},`,
+    body: "Váš účet je připraven. Na mapě zkontrolujte, zda můžete letět, ukládejte oblíbená místa a spojte se s ostatními piloty.",
+    cta: "Otevřít mapu",
+    footer: "Pomůcka pro plánování, ne oficiální povolení",
+    text: (name: string, url: string) =>
+      `Ahoj ${name},\n\nVáš účet CanIFly je připraven.\n\nOtevřít mapu: ${url}\n\n— CanIFly · https://canifly.org`,
+  },
+} as const;
+
+export function welcomeEmailContent(opts: {
+  name: string;
+  homeUrl: string;
+  locale?: MailLocale | string | null;
+}): { subject: string; html: string; text: string } {
+  const locale = normalizeMailLocale(opts.locale);
+  const t = WELCOME_COPY[locale];
+  const subject = t.subject;
+  const text = t.text(opts.name, opts.homeUrl);
+
+  const site = escapeHtml(appPublicUrl());
+  const url = escapeHtml(opts.homeUrl);
+
+  const html = `
+<!DOCTYPE html>
+<html lang="${locale}">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>${escapeHtml(subject)}</title>
+</head>
+<body style="margin:0;padding:0;background:#f7f7f7;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f7f7f7;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:480px;background:#ffffff;border:1px solid #ebebeb;border-radius:16px;overflow:hidden;">
+          <tr>
+            <td style="padding:28px 28px 8px 28px;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+              <p style="margin:0;font-size:22px;font-weight:700;letter-spacing:-0.02em;color:#222222;">
+                CanI<span style="color:#ff385c;">Fly</span>
+              </p>
+              <p style="margin:6px 0 0 0;font-size:13px;color:#717171;">${escapeHtml(t.tagline)}</p>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding:16px 28px 8px 28px;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;color:#222222;">
+              <h1 style="margin:0 0 12px 0;font-size:20px;line-height:1.3;font-weight:700;">${escapeHtml(t.title)}</h1>
+              <p style="margin:0 0 12px 0;font-size:15px;line-height:1.55;color:#222222;">${escapeHtml(t.hello(opts.name))}</p>
+              <p style="margin:0 0 24px 0;font-size:15px;line-height:1.55;color:#717171;">
+                ${escapeHtml(t.body)}
+              </p>
+              <table role="presentation" cellspacing="0" cellpadding="0" style="margin:0 0 24px 0;">
+                <tr>
+                  <td style="border-radius:999px;background:#222222;">
+                    <a href="${url}" style="display:inline-block;padding:12px 22px;font-family:system-ui,-apple-system,sans-serif;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;">
+                      ${escapeHtml(t.cta)}
+                    </a>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
           <tr>

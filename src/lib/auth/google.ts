@@ -3,7 +3,7 @@ import type { Context } from "hono";
 import { eq } from "drizzle-orm";
 import { ensurePostgisSchema, getDb, isDatabaseAvailable } from "../db/client.js";
 import { users } from "../db/schema.js";
-import { normalizeMailLocale } from "./mail.js";
+import { normalizeMailLocale, appHomeUrl, welcomeEmailContent, sendEmail, type MailLocale } from "./mail.js";
 import { setAuthCookie } from "./session.js";
 
 const STATE_TTL_MS = 10 * 60 * 1000;
@@ -190,7 +190,7 @@ async function upsertGoogleUser(profile: GoogleProfile, locale: string) {
       })
       .where(eq(users.id, byGoogle.id))
       .returning();
-    return updated ?? byGoogle;
+    return { user: updated ?? byGoogle, isNewUser: false };
   }
 
   const [byEmail] = await db
@@ -217,7 +217,7 @@ async function upsertGoogleUser(profile: GoogleProfile, locale: string) {
       })
       .where(eq(users.id, byEmail.id))
       .returning();
-    return updated ?? byEmail;
+    return { user: updated ?? byEmail, isNewUser: false };
   }
 
   const [created] = await db
@@ -233,7 +233,27 @@ async function upsertGoogleUser(profile: GoogleProfile, locale: string) {
     })
     .returning();
 
-  return created;
+  return { user: created, isNewUser: true };
+}
+
+async function sendWelcomeEmail(user: {
+  email: string;
+  name: string;
+  locale: string | null;
+}): Promise<void> {
+  const mailLocale = normalizeMailLocale(user.locale) as MailLocale;
+  const homeUrl = appHomeUrl(mailLocale);
+  const content = welcomeEmailContent({
+    name: user.name?.trim() || user.email.split("@")[0] || "Pilot",
+    homeUrl,
+    locale: mailLocale,
+  });
+  await sendEmail({
+    to: user.email,
+    subject: content.subject,
+    html: content.html,
+    text: content.text,
+  });
 }
 
 export function handleGoogleAuthStart(c: Context): Response {
@@ -287,7 +307,13 @@ export async function handleGoogleAuthCallback(c: Context): Promise<Response> {
 
     const accessToken = await exchangeCode(code);
     const profile = await fetchGoogleProfile(accessToken);
-    const row = await upsertGoogleUser(profile, locale);
+    const { user: row, isNewUser } = await upsertGoogleUser(profile, locale);
+
+    if (isNewUser) {
+      void sendWelcomeEmail(row).catch((err) => {
+        console.error("[auth/google/callback] welcome mail", err);
+      });
+    }
 
     await setAuthCookie(c, { id: row.id, email: row.email });
 
