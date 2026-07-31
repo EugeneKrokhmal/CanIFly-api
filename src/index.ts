@@ -16,6 +16,7 @@ import { weatherRoutes } from "./routes/weather";
 import { zonesRoutes } from "./routes/zones";
 import { isDatabaseAvailable } from "./lib/db/client";
 import { memoryHealth } from "./lib/geo/memory-guard";
+import { ensureSeedPilotsLoaded } from "./lib/seed/bootstrap";
 
 config({ path: ".env" });
 
@@ -61,6 +62,9 @@ app.route("/api/pilots", pilotsRoutes);
 app.route("/api/admin", adminRoutes);
 
 console.log(`CanIFly API listening on http://localhost:${port}`);
+
+/** Demo pilots + fly spots (ES/CZ/PL) when DB has no seed users yet. */
+void ensureSeedPilotsLoaded();
 
 serve({
   fetch: app.fetch,
