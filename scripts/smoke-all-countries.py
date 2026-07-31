@@ -65,6 +65,10 @@ CASES = [
     {"id": "SE-Malmo", "lat": 55.605, "lng": 13.0038, "country": "SE", "backend": "lfv", "status": "any", "min_zones": 0},
     {"id": "BORDER-Malmo-SE", "lat": 55.605, "lng": 13.0038, "country": "SE", "backend": "lfv", "status": "any", "min_zones": 0},
     {"id": "BORDER-Copenhagen-DK", "lat": 55.6761, "lng": 12.5683, "country": "DK", "backend": "dronezoner", "status": "any", "min_zones": 0},
+    # --- Ireland ---
+    {"id": "IE-Dublin", "lat": 53.3498, "lng": -6.2603, "country": "IE", "backend": "iaa", "status": "any", "min_zones": 0},
+    {"id": "IE-DUB-airport", "lat": 53.4264, "lng": -6.2499, "country": "IE", "backend": "iaa", "status": {"prohibited", "restricted"}, "min_zones": 1},
+    {"id": "IE-Cork", "lat": 51.8985, "lng": -8.4756, "country": "IE", "backend": "iaa", "status": "any", "min_zones": 0},
 ]
 
 BBOXES = [
@@ -74,6 +78,7 @@ BBOXES = [
     {"id": "bbox-CZ-Prague", "west": 14.3, "south": 50.0, "east": 14.55, "north": 50.15, "backend": {"aimgis"}, "min_features": 1},
     {"id": "bbox-PL-Warsaw", "west": 20.9, "south": 52.15, "east": 21.1, "north": 52.3, "backend": {"pansa"}, "min_features": 1},
     {"id": "bbox-SE-Stockholm", "west": 17.9, "south": 59.25, "east": 18.2, "north": 59.4, "backend": {"lfv"}, "min_features": 1},
+    {"id": "bbox-IE-Dublin", "west": -6.35, "south": 53.28, "east": -6.15, "north": 53.42, "backend": {"iaa"}, "min_features": 1},
     # Viewport center is France (Strasbourg) — single country, not multi-provider fan-out.
     {"id": "bbox-DE-FR-Strasbourg", "west": 7.7, "south": 48.52, "east": 7.85, "north": 48.62, "backend": {"geopf"}, "min_features": 1},
 ]
@@ -106,6 +111,8 @@ RESOLVE_CASES = [
     ("Stockholm", 59.3293, 18.0686, "SE"),
     ("Malmo", 55.605, 13.0038, "SE"),
     ("Copenhagen", 55.6761, 12.5683, "DK"),
+    ("Dublin", 53.3498, -6.2603, "IE"),
+    ("Cork", 51.8985, -8.4756, "IE"),
     ("outside", 60.0, 10.0, None),
 ]
 

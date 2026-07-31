@@ -36,6 +36,10 @@ import {
   queryLfvPoint,
 } from "./lfv-client";
 import {
+  queryIaaBbox,
+  queryIaaPoint,
+} from "./iaa-client";
+import {
   queryPansaBbox,
   queryPansaPoint,
 } from "./pansa-client";
@@ -63,7 +67,8 @@ export type LiveBackendLabel =
   | "foca"
   | "anac"
   | "austro"
-  | "lfv";
+  | "lfv"
+  | "iaa";
 
 /** Live-only countries (no PostGIS/memory fallback). */
 export const LIVE_ONLY_COUNTRIES = new Set<CountryId>([
@@ -76,6 +81,7 @@ export const LIVE_ONLY_COUNTRIES = new Set<CountryId>([
   "PT",
   "AT",
   "SE",
+  "IE",
 ]);
 
 export function backendLabelForCountry(country: CountryId): LiveBackendLabel {
@@ -88,6 +94,7 @@ export function backendLabelForCountry(country: CountryId): LiveBackendLabel {
   if (country === "PT") return "anac";
   if (country === "AT") return "austro";
   if (country === "SE") return "lfv";
+  if (country === "IE") return "iaa";
   return "servais";
 }
 
@@ -171,6 +178,16 @@ export const swedenProvider: CountryAirspaceProvider = {
   },
 };
 
+export const irelandProvider: CountryAirspaceProvider = {
+  country: "IE",
+  async queryPoint(lat, lng) {
+    return queryIaaPoint(lat, lng);
+  },
+  async queryBbox(west, south, east, north, limit = 500) {
+    return queryIaaBbox(west, south, east, north, limit);
+  },
+};
+
 export const czechiaProvider: CountryAirspaceProvider = {
   country: "CZ",
   async queryPoint(lat, lng) {
@@ -202,6 +219,7 @@ export const COUNTRY_PROVIDERS: Record<CountryId, CountryAirspaceProvider> = {
   CZ: czechiaProvider,
   PL: polandProvider,
   SE: swedenProvider,
+  IE: irelandProvider,
 };
 
 export function getProvider(country: CountryId): CountryAirspaceProvider {

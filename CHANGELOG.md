@@ -3,6 +3,7 @@
 ## Unreleased
 
 ### Added
+- Ireland live provider via IAA UAS GeoJSON (`iaa-client.ts`, backend label `iaa`)
 - Sweden live provider via LFV Drönarkarta WFS (`lfv-client.ts`, backend label `lfv`)
 - Portugal live provider via ANAC ED-269 JSON (`anac-client.ts`, backend label `anac`)
 - Austria live provider via Austro Control ED-269 ZIP (`austro-client.ts`, backend label `austro`)
