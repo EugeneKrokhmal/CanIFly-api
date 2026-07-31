@@ -24,10 +24,23 @@ import {
   getSessionUser,
   setAuthCookie,
 } from "../lib/auth/session";
+import {
+  googleOAuthConfigured,
+  handleGoogleAuthCallback,
+  handleGoogleAuthStart,
+} from "../lib/auth/google";
 import { ensurePostgisSchema, getDb, isDatabaseAvailable } from "../lib/db/client";
 import { users } from "../lib/db/schema";
 
 export const authRoutes = new Hono();
+
+authRoutes.get("/google/enabled", (c) =>
+  c.json({ enabled: googleOAuthConfigured() }),
+);
+
+authRoutes.get("/google", (c) => handleGoogleAuthStart(c));
+
+authRoutes.get("/google/callback", async (c) => handleGoogleAuthCallback(c));
 
 const VERIFY_TTL_MS = 24 * 60 * 60 * 1000;
 
@@ -220,6 +233,16 @@ authRoutes.post("/login", async (c) => {
 
     if (!row) {
       return c.json({ error: "Invalid email or password" }, 401);
+    }
+
+    if (!row.passwordHash) {
+      return c.json(
+        {
+          error: "This account uses Google sign-in",
+          code: "GOOGLE_ACCOUNT",
+        },
+        401,
+      );
     }
 
     const ok = await verifyPassword(parsed.data.password, row.passwordHash);

@@ -228,6 +228,19 @@ async function runPostgisSchemaMigrations(): Promise<void> {
     ALTER TABLE users
       ADD COLUMN IF NOT EXISTS password_reset_expires timestamptz;
   `;
+  await sql`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS google_id text;
+  `;
+  await sql`
+    ALTER TABLE users
+      ALTER COLUMN password_hash DROP NOT NULL;
+  `;
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS users_google_id_uidx
+      ON users (google_id)
+      WHERE google_id IS NOT NULL;
+  `;
   // Legacy accounts created before email verification: treat as verified.
   await sql`
     UPDATE users

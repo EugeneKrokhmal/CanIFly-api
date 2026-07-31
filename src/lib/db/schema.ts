@@ -43,7 +43,8 @@ export const obstacleVoteValueEnum = pgEnum("obstacle_vote_value", [
 export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   email: text("email").notNull().unique(),
-  passwordHash: text("password_hash").notNull(),
+  passwordHash: text("password_hash"),
+  googleId: text("google_id"),
   name: text("name").notNull().default(""),
   operatorNumber: text("operator_number"),
   bio: text("bio"),
