@@ -117,24 +117,34 @@ adminRoutes.post("/ingest", async (c) => {
     }
 
     if (parsed.data.sources.includes("dipul")) {
-      try {
-        const all = await fetchDipulNationalZones((p) => {
-          if (p.done === p.total || p.done % 25 === 0) {
-            console.log(
-              `[admin/ingest dipul] ${p.done}/${p.total} · ${p.zones} zones`,
-            );
-          }
-        });
-        counts.dipul = await ingestFeatures(all, "dipul");
-      } catch (err) {
-        errors.push(
-          `dipul: ${err instanceof Error ? err.message : "error"}`,
-        );
-      }
+      // National crawl is 10–20+ min — never block the HTTP request (Render timeouts).
+      void (async () => {
+        try {
+          console.log("[admin/ingest dipul] background sync started");
+          const all = await fetchDipulNationalZones((p) => {
+            if (p.done === p.total || p.done % 25 === 0) {
+              console.log(
+                `[admin/ingest dipul] ${p.done}/${p.total} · ${p.zones} zones`,
+              );
+            }
+          });
+          const n = await ingestFeatures(all, "dipul");
+          clearZoneBboxCache();
+          console.log(`[admin/ingest dipul] done — ${n} slices`);
+        } catch (err) {
+          console.error(
+            "[admin/ingest dipul] failed",
+            err instanceof Error ? err.message : err,
+          );
+        }
+      })();
+      counts.dipul = -1; // started async
     }
 
     const total = await getSliceCount();
-    clearZoneBboxCache();
+    if (!parsed.data.sources.includes("dipul")) {
+      clearZoneBboxCache();
+    }
 
     return c.json({
       ok: true,
@@ -143,6 +153,9 @@ adminRoutes.post("/ingest", async (c) => {
       errors,
       total: total.count,
       backend: total.backend,
+      ...(parsed.data.sources.includes("dipul")
+        ? { dipul: "started_async", note: "Watch Render logs; finishes in ~15–30 min" }
+        : {}),
     });
   } catch (err) {
     console.error("[admin/ingest]", err);
