@@ -59,6 +59,12 @@ CASES = [
     {"id": "BORDER-BadSchandau-DE", "lat": 50.917, "lng": 14.155, "country": "DE", "backend": "dipul", "status": "any", "min_zones": 0},
     {"id": "BORDER-Hendaye-FR", "lat": 43.36, "lng": -1.77, "country": "FR", "backend": "geopf", "status": "any", "min_zones": 0},
     {"id": "BORDER-Irun-ES", "lat": 43.338, "lng": -1.789, "country": "ES", "backend": {"servais", "postgis", "memory"}, "status": "any", "min_zones": 0},
+    # --- Sweden ---
+    {"id": "SE-Stockholm", "lat": 59.3293, "lng": 18.0686, "country": "SE", "backend": "lfv", "status": "any", "min_zones": 0},
+    {"id": "SE-ARN-airport", "lat": 59.6519, "lng": 17.9186, "country": "SE", "backend": "lfv", "status": {"prohibited", "restricted"}, "min_zones": 1},
+    {"id": "SE-Malmo", "lat": 55.605, "lng": 13.0038, "country": "SE", "backend": "lfv", "status": "any", "min_zones": 0},
+    {"id": "BORDER-Malmo-SE", "lat": 55.605, "lng": 13.0038, "country": "SE", "backend": "lfv", "status": "any", "min_zones": 0},
+    {"id": "BORDER-Copenhagen-DK", "lat": 55.6761, "lng": 12.5683, "country": "DK", "backend": "dronezoner", "status": "any", "min_zones": 0},
 ]
 
 BBOXES = [
@@ -67,6 +73,7 @@ BBOXES = [
     {"id": "bbox-FR-Paris", "west": 2.25, "south": 48.80, "east": 2.45, "north": 48.90, "backend": {"geopf"}, "min_features": 1},
     {"id": "bbox-CZ-Prague", "west": 14.3, "south": 50.0, "east": 14.55, "north": 50.15, "backend": {"aimgis"}, "min_features": 1},
     {"id": "bbox-PL-Warsaw", "west": 20.9, "south": 52.15, "east": 21.1, "north": 52.3, "backend": {"pansa"}, "min_features": 1},
+    {"id": "bbox-SE-Stockholm", "west": 17.9, "south": 59.25, "east": 18.2, "north": 59.4, "backend": {"lfv"}, "min_features": 1},
     # Viewport center is France (Strasbourg) — single country, not multi-provider fan-out.
     {"id": "bbox-DE-FR-Strasbourg", "west": 7.7, "south": 48.52, "east": 7.85, "north": 48.62, "backend": {"geopf"}, "min_features": 1},
 ]
@@ -96,6 +103,9 @@ RESOLVE_CASES = [
     ("BadSchandau", 50.917, 14.155, "DE"),
     ("Gorlitz", 51.152, 14.987, "DE"),
     ("Zgorzelec", 51.149, 15.01, "PL"),
+    ("Stockholm", 59.3293, 18.0686, "SE"),
+    ("Malmo", 55.605, 13.0038, "SE"),
+    ("Copenhagen", 55.6761, 12.5683, "DK"),
     ("outside", 60.0, 10.0, None),
 ]
 
