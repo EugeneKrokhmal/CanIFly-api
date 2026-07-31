@@ -69,6 +69,9 @@ CASES = [
     {"id": "IE-Dublin", "lat": 53.3498, "lng": -6.2603, "country": "IE", "backend": "iaa", "status": "any", "min_zones": 0},
     {"id": "IE-DUB-airport", "lat": 53.4264, "lng": -6.2499, "country": "IE", "backend": "iaa", "status": {"prohibited", "restricted"}, "min_zones": 1},
     {"id": "IE-Cork", "lat": 51.8985, "lng": -8.4756, "country": "IE", "backend": "iaa", "status": "any", "min_zones": 0},
+    # --- Latvia ---
+    {"id": "LV-Riga", "lat": 56.9496, "lng": 24.1052, "country": "LV", "backend": "lgs", "status": "any", "min_zones": 0},
+    {"id": "LV-RIX-airport", "lat": 56.9236, "lng": 23.9711, "country": "LV", "backend": "lgs", "status": {"prohibited", "restricted"}, "min_zones": 1},
 ]
 
 BBOXES = [
@@ -79,6 +82,7 @@ BBOXES = [
     {"id": "bbox-PL-Warsaw", "west": 20.9, "south": 52.15, "east": 21.1, "north": 52.3, "backend": {"pansa"}, "min_features": 1},
     {"id": "bbox-SE-Stockholm", "west": 17.9, "south": 59.25, "east": 18.2, "north": 59.4, "backend": {"lfv"}, "min_features": 1},
     {"id": "bbox-IE-Dublin", "west": -6.35, "south": 53.28, "east": -6.15, "north": 53.42, "backend": {"iaa"}, "min_features": 1},
+    {"id": "bbox-LV-Riga", "west": 24.0, "south": 56.9, "east": 24.2, "north": 57.0, "backend": {"lgs"}, "min_features": 1},
     # Viewport center is France (Strasbourg) — single country, not multi-provider fan-out.
     {"id": "bbox-DE-FR-Strasbourg", "west": 7.7, "south": 48.52, "east": 7.85, "north": 48.62, "backend": {"geopf"}, "min_features": 1},
 ]
@@ -113,6 +117,7 @@ RESOLVE_CASES = [
     ("Copenhagen", 55.6761, 12.5683, "DK"),
     ("Dublin", 53.3498, -6.2603, "IE"),
     ("Cork", 51.8985, -8.4756, "IE"),
+    ("Riga", 56.9496, 24.1052, "LV"),
     ("outside", 60.0, 10.0, None),
 ]
 
