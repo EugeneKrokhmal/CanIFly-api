@@ -35,10 +35,10 @@ const PILOTS: PilotSeed[] = [
     email: `ana.mancha${SEED_EMAIL_SUFFIX}`,
     name: "Ana Rodríguez",
     locale: "es",
-    bio: "Campos abiertos de Castilla-La Mancha — siempre VLOS y lejos de aeródromos.",
+    bio: "Campos abiertos en Castilla-La Mancha. Siempre VLOS y lejos de aeródromos.",
     spots: [
-      { type: "field", lat: 41.05, lng: -4.48, message: "La Mancha — dehesa al sur de Segovia" },
-      { type: "field", lat: 40.82, lng: -3.92, message: "Jarama alto — pradera sin edificios" },
+      { type: "field", lat: 41.05, lng: -4.48, message: "Dehesa al sur de Segovia" },
+      { type: "field", lat: 40.82, lng: -3.92, message: "Pradera sin edificios, Jarama alto" },
     ],
   },
   {
@@ -47,9 +47,9 @@ const PILOTS: PilotSeed[] = [
     locale: "es",
     bio: "Calas y dunas fuera de temporada, lejos de ciudades costeras.",
     spots: [
-      { type: "beach", lat: 36.72, lng: -2.19, message: "Cabo de Gata — playa de los Genoveses" },
-      { type: "beach", lat: 41.85, lng: 3.12, message: "Empordà — cala Cap de Creus (lado sur)" },
-      { type: "field", lat: 39.48, lng: -6.35, message: "Extremadura — dehesa cerca de Trujillo" },
+      { type: "beach", lat: 36.72, lng: -2.19, message: "Playa de los Genoveses, Cabo de Gata" },
+      { type: "beach", lat: 41.85, lng: 3.12, message: "Cala Cap de Creus, Empordà (lado sur)" },
+      { type: "field", lat: 39.48, lng: -6.35, message: "Dehesa cerca de Trujillo" },
     ],
   },
   {
@@ -58,29 +58,29 @@ const PILOTS: PilotSeed[] = [
     locale: "es",
     bio: "Interior y costa de Galicia, siempre comprobando ENAIRE antes de despegar.",
     spots: [
-      { type: "beach", lat: 42.92, lng: -8.65, message: "Costa da Morte — dunas de Laxe" },
-      { type: "field", lat: 42.58, lng: -7.65, message: "O Courel — pradera de altura" },
+      { type: "beach", lat: 42.92, lng: -8.65, message: "Dunas de Laxe, Costa da Morte" },
+      { type: "field", lat: 42.58, lng: -7.65, message: "Pradera de altura, O Courel" },
     ],
   },
   {
     email: `petr.bohemia${SEED_EMAIL_SUFFIX}`,
     name: "Petr Novák",
     locale: "cs",
-    bio: "Jih Moravy a Slovácko — louky mimo zastavěnou oblast.",
+    bio: "Jih Moravy a Slovácko, louky mimo zastavěnou oblast.",
     spots: [
-      { type: "field", lat: 48.62, lng: 17.15, message: "Hodonínsko — vinice u Mutěnic" },
-      { type: "field", lat: 48.58, lng: 17.22, message: "Břeclavsko — luka u rybníka" },
-      { type: "field", lat: 49.15, lng: 15.12, message: "Třeboň — rákosí u Nových Hradů" },
+      { type: "field", lat: 48.62, lng: 17.15, message: "Vinice u Mutěnic" },
+      { type: "field", lat: 48.58, lng: 17.22, message: "Luka u rybníka, Břeclavsko" },
+      { type: "field", lat: 49.15, lng: 15.12, message: "Rákosí u Nových Hradů, Třeboň" },
     ],
   },
   {
     email: `jana.morava${SEED_EMAIL_SUFFIX}`,
     name: "Jana Kučerová",
     locale: "cs",
-    bio: "Jižní Morava — vinice a louky mimo zastavěnou oblast.",
+    bio: "Jižní Morava, vinice a louky mimo zastavěnou oblast.",
     spots: [
-      { type: "field", lat: 48.92, lng: 16.42, message: "Pálava — trať mezi vinicemi" },
-      { type: "field", lat: 48.85, lng: 16.88, message: "Slovácko — luka u Baťova kanálu" },
+      { type: "field", lat: 48.92, lng: 16.42, message: "Trať mezi vinicemi, Pálava" },
+      { type: "field", lat: 48.85, lng: 16.88, message: "Luka u Baťova kanálu" },
     ],
   },
   {
@@ -89,44 +89,44 @@ const PILOTS: PilotSeed[] = [
     locale: "cs",
     bio: "Rybníky a lesní mýtiny na jihu a severozápadě republiky.",
     spots: [
-      { type: "field", lat: 48.81, lng: 14.35, message: "Krumlov — louka pod hradem (jižní břeh)" },
-      { type: "field", lat: 49.15, lng: 15.12, message: "Třeboň — rákosí u Nových Hradů" },
-      { type: "field", lat: 48.92, lng: 16.42, message: "Pálava — trať mezi vinicemi" },
-      { type: "field", lat: 48.85, lng: 16.88, message: "Slovácko — luka u Baťova kanálu" },
+      { type: "field", lat: 48.81, lng: 14.35, message: "Louka pod hradem, jižní břeh" },
+      { type: "field", lat: 49.15, lng: 15.12, message: "Rákosí u Nových Hradů, Třeboň" },
+      { type: "field", lat: 48.92, lng: 16.42, message: "Trať mezi vinicemi, Pálava" },
+      { type: "field", lat: 48.85, lng: 16.88, message: "Luka u Baťova kanálu" },
     ],
   },
   {
     email: `kasia.mazury${SEED_EMAIL_SUFFIX}`,
     name: "Kasia Wiśniewska",
     locale: "pl",
-    bio: "Mazury i Podlasie — jeziora i łąki z dala od EPWA.",
+    bio: "Mazury i Podlasie, jeziora i łąki z dala od EPWA.",
     spots: [
-      { type: "field", lat: 53.82, lng: 21.58, message: "Mikołajki — łąka nad taflą jeziora" },
-      { type: "field", lat: 52.98, lng: 23.15, message: "Podlasie — polana przy Puszczy" },
+      { type: "field", lat: 53.82, lng: 21.58, message: "Łąka nad taflą jeziora, Mikołajki" },
+      { type: "field", lat: 52.98, lng: 23.15, message: "Polana przy Puszczy" },
     ],
   },
   {
     email: `marek.coast${SEED_EMAIL_SUFFIX}`,
     name: "Marek Dąbrowski",
     locale: "pl",
-    bio: "Równiny Mazowsza i Kujaw — łąki z dala od dużych miast.",
+    bio: "Równiny Mazowsza i Kujaw, łąki z dala od dużych miast.",
     spots: [
-      { type: "field", lat: 52.873, lng: 20.579, message: "Mazowsze — łąka koło Mławy" },
-      { type: "field", lat: 52.867, lng: 20.507, message: "Mazowsze — polana przy lesie" },
-      { type: "field", lat: 53.207, lng: 20.018, message: "Warmia — pastwisko nad jeziorem" },
+      { type: "field", lat: 52.873, lng: 20.579, message: "Łąka koło Mławy" },
+      { type: "field", lat: 52.867, lng: 20.507, message: "Polana przy lesie" },
+      { type: "field", lat: 53.207, lng: 20.018, message: "Pastwisko nad jeziorem, Warmia" },
     ],
   },
   {
     email: `zofia.south${SEED_EMAIL_SUFFIX}`,
     name: "Zofia Lewandowska",
     locale: "pl",
-    bio: "Podkarpacie i Beskid Niski — górskie łąki poza strefami miast.",
+    bio: "Podkarpacie i Beskid Niski, górskie łąki poza strefami miast.",
     spots: [
-      { type: "field", lat: 49.65, lng: 20.75, message: "Beskid Niski — polana nad doliną" },
-      { type: "field", lat: 53.72, lng: 21.42, message: "Mazury — zatoczka Giżycko" },
-      { type: "field", lat: 52.873, lng: 20.579, message: "Mazowsze — łąka koło Mławy" },
-      { type: "field", lat: 53.82, lng: 21.58, message: "Mikołajki — łąka nad taflą jeziora" },
-      { type: "field", lat: 52.98, lng: 23.15, message: "Podlasie — polana przy Puszczy" },
+      { type: "field", lat: 49.65, lng: 20.75, message: "Polana nad doliną, Beskid Niski" },
+      { type: "field", lat: 53.72, lng: 21.42, message: "Zatoczka Giżycko" },
+      { type: "field", lat: 52.873, lng: 20.579, message: "Łąka koło Mławy" },
+      { type: "field", lat: 53.82, lng: 21.58, message: "Łąka nad taflą jeziora, Mikołajki" },
+      { type: "field", lat: 52.98, lng: 23.15, message: "Polana przy Puszczy" },
     ],
   },
 ];
@@ -191,6 +191,28 @@ export function seedPilotsPlan() {
     flySpots: PILOTS.reduce((n, p) => n + p.spots.length, 0),
     emailSuffix: SEED_EMAIL_SUFFIX,
   };
+}
+
+/** Re-seed when stored copy still uses em/en dashes (legacy AI-ish seed text). */
+export async function seedNeedsRefresh(): Promise<boolean> {
+  const { db } = getDb();
+  const seedUsers = await db
+    .select({ id: users.id, bio: users.bio })
+    .from(users)
+    .where(like(users.email, `%${SEED_EMAIL_SUFFIX}`));
+
+  if (seedUsers.length === 0) return false;
+
+  const dash = /[—–]/;
+  if (seedUsers.some((u) => dash.test(u.bio ?? ""))) return true;
+
+  const seedIds = seedUsers.map((u) => u.id);
+  const pins = await db
+    .select({ message: obstacles.message })
+    .from(obstacles)
+    .where(inArray(obstacles.userId, seedIds));
+
+  return pins.some((p) => dash.test(p.message ?? ""));
 }
 
 export async function seedPilots(options: {
