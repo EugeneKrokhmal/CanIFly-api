@@ -13,6 +13,7 @@
     "sync:servais": "tsx scripts/sync-servais.ts",
     "sync:dipul": "tsx scripts/sync-dipul.ts",
     "seed:pilots": "tsx scripts/seed-pilots.ts",
+    "seed:scenic": "tsx scripts/seed-scenic-fly-spots.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

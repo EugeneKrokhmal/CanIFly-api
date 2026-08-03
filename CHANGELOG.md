@@ -24,7 +24,8 @@
 - Czechia aimgis: AD_perimeter / LKR314 inner zones and military ODOS map to PROHIBITED; `mapStatus` from `zoneVisualStatus`
 
 ### Added
-- `scripts/sync-dipul.ts` + admin ingest source `dipul` (tiled national WFS → PostGIS, skips wohngrundstuecke)
+- `scripts/seed-scenic-fly-spots.ts` — scenic fly spots with Commons photos under a real user (`FLY_SPOT_OWNER_EMAIL`)
+- `src/lib/seed/scenic-fly-spots.ts` — 7 candidates × 12 live countries (airspace-filtered at seed)
 
 ## [0.3.0] — 2026-07-30
 
