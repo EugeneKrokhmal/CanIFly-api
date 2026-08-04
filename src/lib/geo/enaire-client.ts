@@ -3,15 +3,14 @@ import {
   SERVAIS_FEATURE_SERVER_BASE,
   SERVAIS_MAX_PAGE_SIZE,
   SERVAIS_LAYER_IDS,
+  buildMatchedZoneFromProvider,
 } from "@canifly/middleware";
 import type {
   MatchedZone,
-  UasRestriction,
   UasZoneFeature,
   UasZonesFile,
   ZoneSource,
 } from "@canifly/middleware";
-import { toMeters } from "@canifly/middleware";
 
 export class EnaireFetchError extends Error {
   constructor(
@@ -199,56 +198,12 @@ export function normalizeEd318Payload(payload: unknown): UasZoneFeature[] {
   return [];
 }
 
-/** Normalize ENAIRE servAIS attribute bags into MatchedZone. */
+/** Normalize ENAIRE servAIS attribute bags into MatchedZone (+ common enrichment). */
 export function servaisAttributesToMatchedZone(
   attrs: Record<string, unknown>,
   source: ZoneSource,
 ): MatchedZone | null {
-  const identifier = String(
-    attrs.identifier ?? attrs.Identifier ?? attrs.OBJECTID ?? "",
-  );
-  if (!identifier) return null;
-
-  // ENAIRE stores the ED-318 restriction in `type`, and zone kind in `variant`.
-  const restrictionRaw = String(
-    attrs.restriction ??
-      attrs.Restriction ??
-      attrs.type ??
-      attrs.Type ??
-      "REQ_AUTHORISATION",
-  );
-  const restriction = (restrictionRaw === "REQ_AUTHORIZATION"
-    ? "REQ_AUTHORISATION"
-    : restrictionRaw) as UasRestriction;
-
-  const reasonsRaw = attrs.reasons ?? attrs.reason ?? attrs.Reason;
-  const reason = Array.isArray(reasonsRaw)
-    ? reasonsRaw.map(String)
-    : reasonsRaw
-      ? String(reasonsRaw)
-          .split(/[,;|]/)
-          .map((s) => s.trim())
-          .filter(Boolean)
-      : [];
-
-  const uom = String(attrs.uom ?? attrs.uomDimensions ?? "M");
-  const lower = Number(attrs.lower ?? attrs.lowerLimit ?? 0);
-  const upper = Number(attrs.upper ?? attrs.upperLimit ?? 120);
-
-  return {
-    identifier,
-    name: String(attrs.name ?? attrs.Name ?? identifier),
-    restriction,
-    reason,
-    source,
-    country: "ES",
-    lowerLimitM: toMeters(lower, uom),
-    upperLimitM: toMeters(upper, uom),
-    lowerRef: String(attrs.lowerReference ?? attrs.lowerVerticalReference ?? "AGL"),
-    upperRef: String(attrs.upperReference ?? attrs.upperVerticalReference ?? "AGL"),
-    contact: attrs.email ? String(attrs.email) : undefined,
-    message: attrs.message ? String(attrs.message) : undefined,
-  };
+  return buildMatchedZoneFromProvider({ source, rawAttributes: attrs });
 }
 
 function arcgisRingsToPolygon(

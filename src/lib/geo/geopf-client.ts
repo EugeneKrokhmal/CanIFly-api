@@ -7,9 +7,9 @@
  * `remarque` (legal note). Official ED-269 packs remain on sia.aviation-civile.gouv.fr.
  */
 import {
+  buildMatchedZoneFromProvider,
   zoneVisualStatus,
   type MatchedZone,
-  type UasRestriction,
 } from "@canifly/middleware";
 import {
   filterFeaturesByBbox,
@@ -86,53 +86,15 @@ async function fetchGeoJson(
   }
 }
 
-function parseHeightLimitM(limite: string): number | null {
-  const m = limite.match(/(\d+)\s*m/i);
-  return m ? Number(m[1]) : null;
-}
-
-function restrictionForLimite(limite: string): UasRestriction {
-  const t = limite.toLowerCase();
-  if (t.includes("interdit") || t.includes("prohib")) return "PROHIBITED";
-  if (t.includes("hauteur") || t.includes("maximale")) return "CONDITIONAL";
-  if (!t.trim() || t === "none" || t === "null") return "CONDITIONAL";
-  return "REQ_AUTHORISATION";
-}
-
 function propsToMatchedZone(
   props: GeopfProps,
   featureId: string | number | undefined,
 ): MatchedZone | null {
-  const limite = String(props.limite ?? "").trim();
-  const remarque = String(props.remarque ?? "").trim();
-  const identifier = String(
-    featureId ?? (limite || remarque || ""),
-  ).trim();
-  if (!identifier) return null;
-
-  const heightM = parseHeightLimitM(limite);
-  const restriction = restrictionForLimite(limite);
-  const name =
-    limite.replace(/\s*\*\s*$/, "").trim() ||
-    remarque.slice(0, 80) ||
-    "Zone UAS France";
-
-  return {
-    identifier,
-    name,
-    restriction,
-    reason: [
-      ...(limite ? [limite] : []),
-      ...(restriction === "PROHIBITED" ? ["PROHIBITED"] : []),
-    ],
+  return buildMatchedZoneFromProvider({
     source: "geopf",
-    country: "FR",
-    lowerLimitM: 0,
-    upperLimitM: heightM != null && heightM > 0 ? heightM : 120,
-    lowerRef: "AGL",
-    upperRef: "AGL",
-    message: remarque || limite || undefined,
-  };
+    rawAttributes: props,
+    featureId,
+  });
 }
 
 function clampMapBbox(

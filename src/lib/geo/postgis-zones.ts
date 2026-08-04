@@ -3,6 +3,7 @@ import {
   type MatchedZone,
   type UasZoneFeature,
   type ZoneSource,
+  enrichMatchedZone,
 } from "@canifly/middleware";
 import { getDb, isDatabaseAvailable } from "../db/client";
 import { memoryZoneStore } from "../db/memory-store";
@@ -46,20 +47,23 @@ export function rowToMatchedZone(
     country = fallbackCountry;
   }
 
-  return {
-    identifier: row.zone_identifier,
-    name: row.name,
-    restriction: row.restriction,
-    reason: row.reason ?? [],
-    source: row.source,
-    country,
-    lowerLimitM: row.lower_limit_m,
-    upperLimitM: row.upper_limit_m,
-    lowerRef: row.lower_ref,
-    upperRef: row.upper_ref,
-    contact,
-    message: row.properties?.message,
-  };
+  return enrichMatchedZone(
+    {
+      identifier: row.zone_identifier,
+      name: row.name,
+      restriction: row.restriction,
+      reason: row.reason ?? [],
+      source: row.source,
+      country,
+      lowerLimitM: row.lower_limit_m,
+      upperLimitM: row.upper_limit_m,
+      lowerRef: row.lower_ref,
+      upperRef: row.upper_ref,
+      contact,
+      message: row.properties?.message,
+    },
+    { source: row.source, feature: row.properties },
+  );
 }
 
 export async function queryPostgisPoint(

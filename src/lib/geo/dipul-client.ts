@@ -8,10 +8,9 @@
  * Sources: dipul WFS + Rechtsgrundlagen (dipul.bund.de) + ED-318 sample.
  */
 import {
-  toMeters,
+  buildMatchedZoneFromProvider,
   zoneVisualStatus,
   type MatchedZone,
-  type UasRestriction,
   type UasZoneFeature,
 } from "@canifly/middleware";
 import { ViewportLayerCache } from "./geojson-bbox-cache";
@@ -108,43 +107,6 @@ export const DIPUL_INGEST_TYPES = MAP_TYPES;
 
 const viewportLayerCache = new ViewportLayerCache();
 
-/** Open-category hard no-fly / consent-required facility types (§ 21h Abs. 3). */
-const PROHIBITED_TYPES = new Set([
-  "FLUGHAFEN", // Nr. 2 — open category not permitted (specific only)
-  "FLUGPLATZ", // Nr. 1 — needs operator consent; treat as no-fly without it
-  "FLUGBESCHRAENKUNGSGEBIET", // ED-R (§ 17 LuftVO)
-  "MILITAERISCHE_ANLAGE", // Nr. 3
-  "JUSTIZVOLLZUGSANSTALT", // Nr. 3
-  "KRANKENHAUS", // Nr. 10
-  "POLIZEI", // Nr. 4
-  "SICHERHEITSBEHOERDE", // Nr. 4
-  "BEHOERDE", // Nr. 4
-  "DIPLOMATISCHE_VERTRETUNG", // Nr. 4
-  "INTERNATIONALE_ORGANISATION", // Nr. 4
-  "INDUSTRIEANLAGE", // Nr. 3
-  "KRAFTWERK", // Nr. 3
-  "UMSPANNWERK", // Nr. 3
-  "BSL-4-LABOR", // Nr. 3
-  "LABOR", // Nr. 3 (BSL-4 labs layer)
-]);
-
-const CONDITIONAL_TYPES = new Set([
-  "WOHNGRUNDSTUECK", // Nr. 7 — owner consent / micro-drone exceptions
-  "FREIBAD", // Nr. 8 — outside bathing hours
-  "NATIONALPARK", // Nr. 6
-  "NATURSCHUTZGEBIET", // Nr. 6
-  "FFH-GEBIET", // Nr. 6
-  "VOGELSCHUTZGEBIET", // Nr. 6
-  "BUNDESAUTOBAHN", // Nr. 5 — distance / specific-category rules
-  "BUNDESSTRASSE",
-  "BAHNANLAGE",
-  "BINNENWASSERSTRASSE",
-  "SEEWASSERSTRASSE",
-  "SCHIFFFAHRTSANLAGE",
-  "STROMLEITUNG",
-  "WINDKRAFTANLAGE",
-]);
-
 export class DipulFetchError extends Error {
   constructor(
     message: string,
@@ -171,15 +133,6 @@ interface DipulProps {
   lower_limit_alt_ref?: string;
   upper_limit_alt_ref?: string;
   [key: string]: unknown;
-}
-
-function pickDipulName(props: DipulProps): string {
-  const raw =
-    props.generated_name_EN ?? props.name ?? props.generated_name_DE ?? "";
-  if (Array.isArray(raw)) {
-    return String(raw[0] ?? "").trim();
-  }
-  return String(raw).trim();
 }
 
 function isTimeout(err: unknown): boolean {
@@ -218,78 +171,11 @@ async function fetchGeoJson(
   }
 }
 
-/**
- * Map dipul type_code → ED-318-like restriction for open-category UX.
- * Cross-checked against LuftVO § 21h Abs. 3 + dipul Rechtsgrundlagen.
- */
-function restrictionForType(
-  typeCode: string | undefined,
-  legalRef?: string,
-): UasRestriction {
-  const t = (typeCode ?? "").toUpperCase().trim();
-  const legal = (legalRef ?? "").toUpperCase();
-
-  if (
-    PROHIBITED_TYPES.has(t) ||
-    t.includes("FLUGBESCHRAENK") ||
-    t.includes("MILITAER") ||
-    legal.includes("§ 17") ||
-    /ABS\.\s*3\s*\([12]\.?\)/.test(legal)
-  ) {
-    return "PROHIBITED";
-  }
-  // Temporary operational restrictions (§ 21h Abs. 4) — treat as no-fly until cleared
-  if (t.includes("TEMPORAER") || legal.includes("ABS. 4")) {
-    return "PROHIBITED";
-  }
-  // CTR — Flugverkehrskontrollfreigabe (§ 21h Abs. 3 Nr. 9)
-  if (t === "KONTROLLZONE" || t.includes("KONTROLL")) {
-    return "REQ_AUTHORISATION";
-  }
-  if (CONDITIONAL_TYPES.has(t) || t.includes("WOHN") || t.includes("FREIBAD")) {
-    return "CONDITIONAL";
-  }
-  return "REQ_AUTHORISATION";
-}
-
 function propsToMatchedZone(props: DipulProps): MatchedZone | null {
-  const nameFromProps = pickDipulName(props);
-  const identifier = String(
-    props.external_reference ?? nameFromProps ?? "",
-  ).trim();
-  if (!identifier) return null;
-
-  const name = nameFromProps || identifier;
-
-  const lowerUnit = String(props.lower_limit_unit ?? "m");
-  const upperUnit = String(props.upper_limit_unit ?? lowerUnit);
-  const lowerRaw = Number(props.lower_limit_altitude ?? 0);
-  const upperRaw =
-    props.upper_limit_altitude != null
-      ? Number(props.upper_limit_altitude)
-      : 120;
-
-  const lowerRef = String(props.lower_limit_alt_ref ?? "AGL").toUpperCase();
-  const upperRef = String(
-    props.upper_limit_alt_ref ?? props.lower_limit_alt_ref ?? "AGL",
-  ).toUpperCase();
-
-  return {
-    identifier,
-    name,
-    restriction: restrictionForType(props.type_code, props.legal_ref),
-    reason: [
-      ...(props.type_code ? [String(props.type_code)] : []),
-      ...(props.legal_ref ? [String(props.legal_ref)] : []),
-    ],
+  return buildMatchedZoneFromProvider({
     source: "dipul",
-    country: "DE",
-    lowerLimitM: toMeters(lowerRaw, lowerUnit),
-    upperLimitM: toMeters(upperRaw, upperUnit),
-    lowerRef: lowerRef === "MSL" || lowerRef === "AMSL" ? "AMSL" : "AGL",
-    upperRef: upperRef === "MSL" || upperRef === "AMSL" ? "AMSL" : "AGL",
-    message: props.legal_ref ? String(props.legal_ref) : undefined,
-  };
+    rawAttributes: props,
+  });
 }
 
 function clampMapBbox(

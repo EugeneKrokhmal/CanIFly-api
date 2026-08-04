@@ -1,7 +1,10 @@
-import type {
-  MatchedZone,
-  UasRestriction,
-  UasZoneFeature,
+import {
+  buildMatchedZoneFromProvider,
+  mapPansaRestriction,
+  pansaReasonsFromAttrs,
+  type MatchedZone,
+  type UasRestriction,
+  type UasZoneFeature,
 } from "@canifly/middleware";
 import { pansaHttpsRequest } from "./pansa-tls";
 
@@ -224,75 +227,11 @@ function pickDescription(desc: PansaZoneRaw["description"]): string | undefined 
 
 /** Map PANSA zone type / name / text → ED-318-like restriction. */
 export function pansaToRestriction(raw: PansaZoneRaw): UasRestriction {
-  const t = String(raw.type ?? "").toUpperCase();
-  const n = String(raw.name ?? "").toUpperCase().replace(/\s+/g, " ");
-  const msg = (pickDescription(raw.description) ?? "").toUpperCase();
-
-  if (raw.restriction) {
-    const r = String(raw.restriction).toUpperCase();
-    if (r.includes("PROHIB")) return "PROHIBITED";
-    if (r.includes("AUTHORI") || r.includes("AUTH")) return "REQ_AUTHORISATION";
-    if (r.includes("COND")) return "CONDITIONAL";
-  }
-
-  if (t === "DRAP" || n.startsWith("DRA-P") || n.startsWith("DRAP")) {
-    return "PROHIBITED";
-  }
-  if (t === "DRAR" || n.startsWith("DRA-R") || n.startsWith("DRAR")) {
-    return "REQ_AUTHORISATION";
-  }
-  if (t === "DRAI" || n.startsWith("DRA-I") || n.startsWith("DRAI")) {
-    return "CONDITIONAL";
-  }
-  if (["P", "EPP"].includes(t) || msg.includes("PROHIBITED")) {
-    return "PROHIBITED";
-  }
-  if (
-    [
-      "CTR",
-      "CTR1KM",
-      "CTR6KM",
-      "MCTR",
-      "MCTR2KM",
-      "ATZ",
-      "ATZ1KM",
-      "ATZ6KM",
-      "R",
-      "EPR",
-      "TRA",
-      "TSA",
-      "D",
-      "EPD",
-      "RMZ",
-      "ADIZ",
-    ].includes(t)
-  ) {
-    return "REQ_AUTHORISATION";
-  }
-  return "CONDITIONAL";
+  return mapPansaRestriction(raw as Record<string, unknown>);
 }
 
 function pansaReasons(raw: PansaZoneRaw): string[] {
-  const t = String(raw.type ?? "").toUpperCase();
-  if (t.startsWith("DRA")) return ["UAS_GEOGRAPHIC_ZONE"];
-  if (
-    [
-      "CTR",
-      "CTR1KM",
-      "CTR6KM",
-      "MCTR",
-      "MCTR2KM",
-      "ATZ",
-      "ATZ1KM",
-      "ATZ6KM",
-      "TMA",
-      "MTMA",
-    ].includes(t)
-  ) {
-    return ["AIR_TRAFFIC"];
-  }
-  if (["TSA", "TRA", "D", "R", "P", "MRT"].includes(t)) return ["OTHER"];
-  return ["OTHER"];
+  return pansaReasonsFromAttrs(raw as Record<string, unknown>);
 }
 
 function metersBetween(
@@ -475,24 +414,15 @@ function geometryContainsPoint(
 export async function pansaRawToMatchedZone(
   raw: PansaZoneRaw,
 ): Promise<MatchedZone | null> {
-  const identifier = String(raw.name ?? raw.uid ?? "").trim();
-  if (!identifier) return null;
-  const lower = Number(raw.min ?? 0);
-  const upper = Number(raw.max ?? 120);
-  return {
-    identifier,
-    name: String(raw.othername ?? raw.name ?? identifier),
-    restriction: pansaToRestriction(raw),
-    reason: pansaReasons(raw),
+  const zone = buildMatchedZoneFromProvider({
     source: "pansa",
-    country: "PL",
-    lowerLimitM: Number.isFinite(lower) ? lower : 0,
-    upperLimitM: Number.isFinite(upper) ? upper : 120,
-    lowerRef: "AGL",
-    upperRef: "AGL",
-    contact: raw.contact ? String(raw.contact) : undefined,
-    message: await resolvePansaMessage(raw),
-  };
+    rawAttributes: raw as Record<string, unknown>,
+  });
+  if (!zone) return null;
+
+  const message = await resolvePansaMessage(raw);
+  if (!message || message === zone.message) return zone;
+  return { ...zone, message };
 }
 
 /** Map path — skip async type-catalog lookup per zone. */
