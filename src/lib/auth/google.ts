@@ -230,6 +230,7 @@ async function upsertGoogleUser(profile: GoogleProfile, locale: string) {
       avatarUrl: profile.picture ?? null,
       locale: normalizeMailLocale(locale),
       emailVerifiedAt: now,
+      termsAcceptedAt: now,
     })
     .returning();
 

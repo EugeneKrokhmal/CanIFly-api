@@ -234,6 +234,18 @@ async function runPostgisSchemaMigrations(): Promise<void> {
   `;
   await sql`
     ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS marketing_opt_in boolean NOT NULL DEFAULT false;
+  `;
+  await sql`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS marketing_opt_in_at timestamptz;
+  `;
+  await sql`
+    ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS terms_accepted_at timestamptz;
+  `;
+  await sql`
+    ALTER TABLE users
       ALTER COLUMN password_hash DROP NOT NULL;
   `;
   await sql`

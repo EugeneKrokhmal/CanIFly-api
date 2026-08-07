@@ -30,6 +30,7 @@ function toPublicUser(row: {
   bio: string | null;
   avatarUrl: string | null;
   locale?: string | null;
+  marketingOptIn?: boolean | null;
 }) {
   return {
     id: row.id,
@@ -39,6 +40,7 @@ function toPublicUser(row: {
     bio: row.bio,
     avatarUrl: row.avatarUrl,
     locale: normalizeMailLocale(row.locale),
+    marketingOptIn: Boolean(row.marketingOptIn),
   };
 }
 
@@ -77,6 +79,7 @@ accountRoutes.patch("/", async (c) => {
         bio: users.bio,
         avatarUrl: users.avatarUrl,
         locale: users.locale,
+        marketingOptIn: users.marketingOptIn,
       })
       .from(users)
       .where(eq(users.id, auth.id))
@@ -117,6 +120,7 @@ accountRoutes.patch("/", async (c) => {
         bio: users.bio,
         avatarUrl: users.avatarUrl,
         locale: users.locale,
+        marketingOptIn: users.marketingOptIn,
       });
 
     return c.json({ user: toPublicUser(row) });

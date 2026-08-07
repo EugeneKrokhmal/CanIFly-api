@@ -8,6 +8,7 @@ export type SendEmailInput = {
   subject: string;
   html: string;
   text: string;
+  replyTo?: string;
 };
 
 export type MailLocale = "es" | "en" | "de" | "fr" | "pl" | "cs";
@@ -37,6 +38,37 @@ export function normalizeMailLocale(value: unknown): MailLocale {
     return value;
   }
   return "es";
+}
+
+/** First matching app locale from an Accept-Language header (or null). */
+export function localeFromAcceptLanguage(
+  header: string | null | undefined,
+): MailLocale | null {
+  if (!header?.trim()) return null;
+  for (const part of header.split(",")) {
+    const tag = part.trim().split(";")[0]?.trim().toLowerCase();
+    if (!tag) continue;
+    const base = tag.split("-")[0];
+    const normalized = normalizeMailLocale(base);
+    // normalizeMailLocale maps unknown → es; only accept exact base matches
+    if (base === normalized) return normalized;
+  }
+  return null;
+}
+
+/**
+ * Prefer explicit body locale; if it is still the Spanish default, fall back to
+ * Accept-Language so PL/DE visitors registering on bare canifly.org get local mail.
+ */
+export function resolveRegisterLocale(
+  bodyLocale: unknown,
+  acceptLanguage: string | null | undefined,
+): MailLocale {
+  const fromBody = normalizeMailLocale(bodyLocale);
+  if (fromBody !== "es") return fromBody;
+  const fromHeader = localeFromAcceptLanguage(acceptLanguage);
+  if (fromHeader && fromHeader !== "es") return fromHeader;
+  return fromBody;
 }
 
 export function verificationUrl(locale: MailLocale, token: string): string {
@@ -78,6 +110,7 @@ export async function sendEmail(input: SendEmailInput): Promise<void> {
       subject: input.subject,
       html: input.html,
       text: input.text,
+      ...(input.replyTo ? { reply_to: input.replyTo } : {}),
     }),
   });
 

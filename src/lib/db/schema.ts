@@ -1,4 +1,5 @@
 import {
+  boolean,
   doublePrecision,
   index,
   jsonb,
@@ -60,6 +61,9 @@ export const users = pgTable("users", {
   passwordResetExpires: timestamp("password_reset_expires", {
     withTimezone: true,
   }),
+  marketingOptIn: boolean("marketing_opt_in").notNull().default(false),
+  marketingOptInAt: timestamp("marketing_opt_in_at", { withTimezone: true }),
+  termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),

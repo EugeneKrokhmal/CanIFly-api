@@ -8,10 +8,12 @@ import {
   authResetPasswordSchema,
   authVerifyTokenSchema,
   updateLocaleSchema,
+  updateMarketingOptInSchema,
 } from "@canifly/middleware";
 import { hashPassword, verifyPassword } from "../lib/auth/password";
 import {
   normalizeMailLocale,
+  resolveRegisterLocale,
   resetPasswordEmailContent,
   resetPasswordUrl,
   sendEmail,
@@ -52,6 +54,7 @@ function publicUser(row: {
   bio?: string | null;
   avatarUrl?: string | null;
   locale?: string | null;
+  marketingOptIn?: boolean | null;
 }) {
   return {
     id: row.id,
@@ -61,6 +64,7 @@ function publicUser(row: {
     bio: row.bio ?? null,
     avatarUrl: row.avatarUrl ?? null,
     locale: normalizeMailLocale(row.locale),
+    marketingOptIn: Boolean(row.marketingOptIn),
   };
 }
 
@@ -132,7 +136,13 @@ authRoutes.post("/register", async (c) => {
     const email = parsed.data.email.toLowerCase();
     const name = parsed.data.name.trim();
     const operatorNumber = parsed.data.operatorNumber;
-    const locale = normalizeMailLocale(parsed.data.locale);
+    const locale = resolveRegisterLocale(
+      parsed.data.locale,
+      c.req.header("accept-language"),
+    );
+    const marketingOptIn = Boolean(parsed.data.marketingOptIn);
+    const marketingOptInAt = marketingOptIn ? new Date() : null;
+    const termsAcceptedAt = new Date();
     const passwordHash = await hashPassword(parsed.data.password);
     const token = newVerifyToken();
     const expires = new Date(Date.now() + VERIFY_TTL_MS);
@@ -159,6 +169,9 @@ authRoutes.post("/register", async (c) => {
           name,
           operatorNumber,
           locale,
+          marketingOptIn,
+          marketingOptInAt,
+          termsAcceptedAt,
           emailVerifyToken: token,
           emailVerifyExpires: expires,
         })
@@ -183,6 +196,9 @@ authRoutes.post("/register", async (c) => {
       name,
       operatorNumber,
       locale,
+      marketingOptIn,
+      marketingOptInAt,
+      termsAcceptedAt,
       emailVerifiedAt: null,
       emailVerifyToken: token,
       emailVerifyExpires: expires,
@@ -317,6 +333,7 @@ authRoutes.post("/verify-email", async (c) => {
         bio: users.bio,
         avatarUrl: users.avatarUrl,
         locale: users.locale,
+        marketingOptIn: users.marketingOptIn,
       });
 
     const user = publicUser({ ...updated, locale: updated.locale ?? row.locale });
@@ -487,6 +504,7 @@ authRoutes.post("/reset-password", async (c) => {
         bio: users.bio,
         avatarUrl: users.avatarUrl,
         locale: users.locale,
+        marketingOptIn: users.marketingOptIn,
       });
 
     const user = publicUser(updated);
@@ -529,6 +547,7 @@ authRoutes.patch("/locale", async (c) => {
         bio: users.bio,
         avatarUrl: users.avatarUrl,
         locale: users.locale,
+        marketingOptIn: users.marketingOptIn,
         emailVerifiedAt: users.emailVerifiedAt,
       });
 
@@ -540,6 +559,72 @@ authRoutes.patch("/locale", async (c) => {
   } catch (err) {
     console.error("[auth/locale]", err);
     return c.json({ error: "Failed to update locale" }, 500);
+  }
+});
+
+authRoutes.patch("/marketing", async (c) => {
+  try {
+    const session = await getSessionUser(c);
+    if (!session) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    if (!(await isDatabaseAvailable())) {
+      return c.json({ error: "Database unavailable" }, 503);
+    }
+
+    await ensurePostgisSchema();
+
+    const body = await c.req.json().catch(() => null);
+    const parsed = updateMarketingOptInSchema.safeParse(body);
+    if (!parsed.success) {
+      return c.json({ error: "Invalid marketing preference" }, 400);
+    }
+
+    const { db } = getDb();
+    const [current] = await db
+      .select({
+        emailVerifiedAt: users.emailVerifiedAt,
+        marketingOptIn: users.marketingOptIn,
+        marketingOptInAt: users.marketingOptInAt,
+      })
+      .from(users)
+      .where(eq(users.id, session.id))
+      .limit(1);
+
+    if (!current?.emailVerifiedAt) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    const marketingOptIn = parsed.data.marketingOptIn;
+    const marketingOptInAt = marketingOptIn
+      ? current.marketingOptIn
+        ? current.marketingOptInAt
+        : new Date()
+      : current.marketingOptInAt;
+
+    const [row] = await db
+      .update(users)
+      .set({ marketingOptIn, marketingOptInAt })
+      .where(eq(users.id, session.id))
+      .returning({
+        id: users.id,
+        email: users.email,
+        name: users.name,
+        operatorNumber: users.operatorNumber,
+        bio: users.bio,
+        avatarUrl: users.avatarUrl,
+        locale: users.locale,
+        marketingOptIn: users.marketingOptIn,
+      });
+
+    if (!row) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+
+    return c.json({ user: publicUser(row) });
+  } catch (err) {
+    console.error("[auth/marketing]", err);
+    return c.json({ error: "Failed to update marketing preference" }, 500);
   }
 });
 
@@ -559,6 +644,7 @@ authRoutes.get("/me", async (c) => {
         bio: null,
         avatarUrl: null,
         locale: "es" as const,
+        marketingOptIn: false,
       },
     });
   }
@@ -573,6 +659,7 @@ authRoutes.get("/me", async (c) => {
       bio: users.bio,
       avatarUrl: users.avatarUrl,
       locale: users.locale,
+      marketingOptIn: users.marketingOptIn,
       emailVerifiedAt: users.emailVerifiedAt,
     })
     .from(users)
