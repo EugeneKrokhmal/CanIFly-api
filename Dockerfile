@@ -3,8 +3,22 @@ FROM node:22-bookworm-slim
 WORKDIR /app
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends git ca-certificates python3 make g++ \
+  && apt-get install -y --no-install-recommends \
+    git \
+    ca-certificates \
+    python3 \
+    python3-venv \
+    python3-pip \
+    make \
+    g++ \
   && rm -rf /var/lib/apt/lists/*
+
+# DJI FlightRecord decoder (pydjirecord → djirecord CLI)
+RUN python3 -m venv /opt/dji-decode \
+  && /opt/dji-decode/bin/pip install --no-cache-dir --upgrade pip \
+  && /opt/dji-decode/bin/pip install --no-cache-dir 'pydjirecord>=1.2' \
+  && /opt/dji-decode/bin/djirecord --help >/dev/null
+ENV DJI_DECODE_BIN=/opt/dji-decode/bin/djirecord
 
 # Pin middleware commit so Docker cache invalidates when schemas change.
 # Must include pilot/rank (BADGE_HOURS_BONUS). Bump this SHA when shipping shared exports.

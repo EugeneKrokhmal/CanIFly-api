@@ -51,6 +51,7 @@ async function pathExists(p: string): Promise<boolean> {
 async function resolveDjirecordBin(): Promise<string> {
   const candidates = [
     process.env.DJI_DECODE_BIN?.trim(),
+    "/opt/dji-decode/bin/djirecord",
     join(API_ROOT, ".venv-dji", "bin", "djirecord"),
     join(homedir(), ".cache", "canifly-dji-decode", "bin", "djirecord"),
     "/tmp/dji-decode-venv/bin/djirecord",
