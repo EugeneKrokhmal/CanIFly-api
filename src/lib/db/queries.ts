@@ -31,7 +31,7 @@ import {
 export interface QueryMeta {
   queryMs: number;
   dataVersion: string | null;
-  backend: "servais" | "pansa" | "aimgis" | "dipul" | "geopf" | "dronezoner" | "foca" | "anac" | "austro" | "lfv" | "iaa" | "lgs" | "postgis" | "memory" | "multi";
+  backend: "servais" | "pansa" | "aimgis" | "dipul" | "geopf" | "dronezoner" | "foca" | "anac" | "austro" | "lfv" | "iaa" | "lgs" | "anslt" | "eans" | "nsat" | "caasi" | "postgis" | "memory" | "multi";
   country?: CountryId | null;
   countries?: CountryId[];
   /** Set when a live provider threw (e.g. missing PANSA_API_KEY). */

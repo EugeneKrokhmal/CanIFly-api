@@ -14,10 +14,11 @@
     "sync:dipul": "tsx scripts/sync-dipul.ts",
     "seed:pilots": "tsx scripts/seed-pilots.ts",
     "seed:scenic": "tsx scripts/seed-scenic-fly-spots.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:accuracy": "tsx scripts/accuracy-map-data.ts"
   },
   "dependencies": {
-    "@canifly/middleware": "file:../CanIFly-middleware",
+    "@canifly/middleware": "github:EugeneKrokhmal/CanIFly-middleware#main",
     "@hono/node-server": "^1.19.0",
     "@turf/boolean-point-in-polygon": "^7.3.5",
     "@turf/helpers": "^7.3.5",

@@ -32,3 +32,6 @@ yarn-debug.log*
 
 # typescript
 *.tsbuildinfo
+
+.venv-dji/
+.tmp-dji-uploads/

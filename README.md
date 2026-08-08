@@ -26,7 +26,9 @@ This service owns:
 - Session cookies / JWT
 - Uploaded obstacle & avatar photos under `uploads/`
 - Upstream integrations and caching
-- Calling middleware helpers to **classify** status and **filter** zones
+- Calling middleware helpers to **classify** status, **filter** zones, and **compute pilot ranks**
+- DJI flight records (sync + bbox GeoJSON for the map)
+- Pilot leaderboard (`GET /api/pilots/top`) and public profiles with badges
 
 It does **not** render the map or own UI copy (except Accept-Language–aware domain labels via middleware).
 
@@ -40,11 +42,19 @@ It does **not** render the map or own UI copy (except Accept-Language–aware do
 | **PostGIS** | Zone polygons need spatial queries (`ST_Intersects`, bbox); obstacle points similarly |
 | **Drizzle ORM** | Typed schema close to SQL; migrations/bootstrap via `ensurePostgisSchema` |
 | **JWT in httpOnly cookie** | Browser same-origin via Next rewrite; `jose` for sign/verify |
-| **`@canifly/middleware`** | Zod request schemas + `classifyStatus` / `filterByProfile` stay identical for web/tests |
+| **`@canifly/middleware`** | Zod request schemas + `classifyStatus` / `filterByProfile` / `computePilotProgress` stay identical for web/API |
 | **Docker Compose PostGIS** | Reproducible local DB (`canifly` / `canifly-postgis`); separate from any legacy DB |
 | **servAIS FeatureServer + ED-318 ZIPs** | Live/bbox pulls and batch ingest paths for ENAIRE UAS geometry |
 | **OpenSky via API** | Keeps API keys/rate limits and cache off the browser |
 | **Memory/demo bootstrap** | Can load fixture zones when DB empty so status works before full ingest |
+
+### Pilots, flights & ranks
+
+- `GET /api/pilots/top` — leaders by **effective rank-hours** (airtime + achievement/activity boosts); returns `rankId`, `hours`, `level`, avatar
+- `GET /api/pilots/:id` — public profile (flights, pins, badges, stats for the rank plate)
+- Flight bbox GeoJSON includes `authorAvatarUrl` and `authorRankId` for map popups
+- Rank ladder and scoring: `computePilotProgress` in `@canifly/middleware` (see middleware README)
+- Shared DB aggregation: `progressForUserIds` / `ranksForUserIds` in `lib/db/pilot-ranks.ts`
 
 ### Auth model
 
@@ -140,13 +150,15 @@ CanIFly-api/
 │   │   ├── traffic.ts
 │   │   ├── weather.ts
 │   │   ├── drones.ts
-│   │   ├── pilots.ts
+│   │   ├── flights.ts      # DJI sync + bbox GeoJSON
+│   │   ├── pilots.ts       # public profile + /top leaderboard
 │   │   └── admin.ts        # ingest (secret)
 │   └── lib/
-│       ├── db/             # client, schema, queries, bootstrap, memory-store
+│       ├── db/             # client, schema, queries, pilot-ranks, bootstrap
 │       ├── auth/           # jwt, password, session
 │       ├── geo/            # enaire-client, fixtures
 │       ├── traffic/        # opensky-cache
+│       ├── badges.ts       # achievement unlock rules
 │       ├── obstacles/      # photo handling, labels
 │       ├── drones/
 │       └── weather/
@@ -172,7 +184,9 @@ CanIFly-api/
 | `GET` | `/api/traffic/aircraft` \| `/track` | OpenSky |
 | `GET` | `/api/weather` | Point weather |
 | `GET` | `/api/drones/catalog` | Known drone models / classes |
-| `GET` | `/api/pilots/:id` | Public pilot profile |
+| `GET` | `/api/pilots/top` | Leaderboard by effective rank-hours |
+| `GET` | `/api/pilots/:id` | Public pilot profile (+ badges / flights) |
+| `GET` | `/api/flights/bbox` | Flight track GeoJSON (`mine` optional) |
 | `GET` \| `POST` | `/api/admin/ingest` | Requires `ENAIRE_INGEST_SECRET` |
 | `GET` | `/uploads/*` | Static files |
 

@@ -130,6 +130,49 @@ export const obstacleVotes = pgTable(
 export type ObstacleVoteRow = typeof obstacleVotes.$inferSelect;
 export type NewObstacleVote = typeof obstacleVotes.$inferInsert;
 
+/** Decoded DJI (or other) personal flight logs synced to a user account. */
+export const flights = pgTable(
+  "flights",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    source: text("source").notNull().default("dji_fly"),
+    sourceFileName: text("source_file_name"),
+    contentHash: text("content_hash").notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    durationS: doublePrecision("duration_s").notNull().default(0),
+    distanceM: doublePrecision("distance_m").notNull().default(0),
+    maxHeightM: doublePrecision("max_height_m"),
+    maxHSpeedMps: doublePrecision("max_h_speed_mps"),
+    aircraftName: text("aircraft_name"),
+    aircraftSn: text("aircraft_sn"),
+    appPlatform: text("app_platform"),
+    appVersion: text("app_version"),
+    startLat: doublePrecision("start_lat"),
+    startLng: doublePrecision("start_lng"),
+    /** GeoJSON LineString coordinates [[lng,lat] | [lng,lat,alt], ...] or null if undecrypted */
+    trackCoordinates: jsonb("track_coordinates").$type<number[][] | null>(),
+    rawDetails: jsonb("raw_details").$type<Record<string, unknown> | null>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("flights_user_id_idx").on(table.userId),
+    index("flights_started_at_idx").on(table.startedAt),
+    index("flights_start_lat_lng_idx").on(table.startLat, table.startLng),
+    uniqueIndex("flights_user_content_hash_uidx").on(
+      table.userId,
+      table.contentHash,
+    ),
+  ],
+);
+
+export type FlightRow = typeof flights.$inferSelect;
+export type NewFlight = typeof flights.$inferInsert;
+
 /**
  * One spatial row per ED-318 horizontal geometry slice
  * (each slice has its own vertical limits).

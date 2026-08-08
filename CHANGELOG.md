@@ -3,6 +3,11 @@
 ## Unreleased
 
 ### Added
+- `joined` achievement (`Rookie`) — earned on account creation (+4 h eq. toward rank)
+- Aviation pilot ranks shared via middleware (`computePilotProgress` / epaulette ladder)
+- `GET /api/pilots/top` returns `rankId`, `hours` (effective), `level` (rank index 1–10)
+- Flight bbox features include `authorRankId` + `authorAvatarUrl` for map popups
+- DJI flight sync / storage and `GET` flights bbox (All community or Mine)
 - Latvia live provider via LGS/drz.lv ED-269 JSON (`lgs-client.ts`, backend label `lgs`)
 - Ireland live provider via IAA UAS GeoJSON (`iaa-client.ts`, backend label `iaa`)
 - Sweden live provider via LFV Drönarkarta WFS (`lfv-client.ts`, backend label `lfv`)
@@ -16,16 +21,16 @@
 - French mail locale (`fr`) for verification and password-reset emails
 - Germany live provider via dipul WFS (`dipul-client.ts`, backend label `dipul`)
 - LuftVO-oriented open-category restriction mapping (airports / ED-R / military → PROHIBITED)
+- `scripts/seed-scenic-fly-spots.ts` — scenic fly spots with Commons photos under a real user (`FLY_SPOT_OWNER_EMAIL`)
+- `src/lib/seed/scenic-fly-spots.ts` — 7 candidates × 12 live countries (airspace-filtered at seed)
 
 ### Changed
+- Top pilots ranking by effective hours (airtime + achievements / activity), not pin count
+- Shared `progressForUserIds` for leaderboard + map author ranks (`lib/db/pilot-ranks.ts`)
 - Germany map: PostGIS-first via synced dipul (`npm run sync:dipul` / admin `sources:["dipul"]`); live WFS only when empty
 - Memory guard: treat high RSS (not only V8 heap) as pressure; free geo caches before DIPUL
 - DIPUL: cap WFS layer concurrency to 4 (was unbounded Promise.all) to avoid Render exit 134 when loading Germany
 - Czechia aimgis: AD_perimeter / LKR314 inner zones and military ODOS map to PROHIBITED; `mapStatus` from `zoneVisualStatus`
-
-### Added
-- `scripts/seed-scenic-fly-spots.ts` — scenic fly spots with Commons photos under a real user (`FLY_SPOT_OWNER_EMAIL`)
-- `src/lib/seed/scenic-fly-spots.ts` — 7 candidates × 12 live countries (airspace-filtered at seed)
 
 ## [0.3.0] — 2026-07-30
 

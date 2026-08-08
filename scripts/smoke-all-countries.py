@@ -72,6 +72,18 @@ CASES = [
     # --- Latvia ---
     {"id": "LV-Riga", "lat": 56.9496, "lng": 24.1052, "country": "LV", "backend": "lgs", "status": "any", "min_zones": 0},
     {"id": "LV-RIX-airport", "lat": 56.9236, "lng": 23.9711, "country": "LV", "backend": "lgs", "status": {"prohibited", "restricted"}, "min_zones": 1},
+    # --- Lithuania ---
+    {"id": "LT-Vilnius", "lat": 54.6872, "lng": 25.2797, "country": "LT", "backend": "anslt", "status": "any", "min_zones": 0},
+    {"id": "LT-VNO-airport", "lat": 54.6341, "lng": 25.2858, "country": "LT", "backend": "anslt", "status": {"prohibited", "restricted", "limited"}, "min_zones": 1},
+    # --- Estonia ---
+    {"id": "EE-Tallinn", "lat": 59.437, "lng": 24.7536, "country": "EE", "backend": "eans", "status": "any", "min_zones": 0},
+    {"id": "EE-TLL-airport", "lat": 59.4133, "lng": 24.8328, "country": "EE", "backend": "eans", "status": {"prohibited", "restricted", "limited"}, "min_zones": 1},
+    # --- Slovakia ---
+    {"id": "SK-Bratislava", "lat": 48.1486, "lng": 17.1077, "country": "SK", "backend": "nsat", "status": "any", "min_zones": 0},
+    {"id": "SK-BTS-airport", "lat": 48.1702, "lng": 17.2127, "country": "SK", "backend": "nsat", "status": {"prohibited", "restricted"}, "min_zones": 1},
+    # --- Slovenia ---
+    {"id": "SI-Ljubljana", "lat": 46.0569, "lng": 14.5058, "country": "SI", "backend": "caasi", "status": "any", "min_zones": 0},
+    {"id": "SI-LJU-airport", "lat": 46.2237, "lng": 14.4576, "country": "SI", "backend": "caasi", "status": {"prohibited", "restricted"}, "min_zones": 1},
 ]
 
 BBOXES = [
@@ -83,6 +95,10 @@ BBOXES = [
     {"id": "bbox-SE-Stockholm", "west": 17.9, "south": 59.25, "east": 18.2, "north": 59.4, "backend": {"lfv"}, "min_features": 1},
     {"id": "bbox-IE-Dublin", "west": -6.35, "south": 53.28, "east": -6.15, "north": 53.42, "backend": {"iaa"}, "min_features": 1},
     {"id": "bbox-LV-Riga", "west": 24.0, "south": 56.9, "east": 24.2, "north": 57.0, "backend": {"lgs"}, "min_features": 1},
+    {"id": "bbox-LT-Vilnius", "west": 25.15, "south": 54.6, "east": 25.4, "north": 54.75, "backend": {"anslt"}, "min_features": 1},
+    {"id": "bbox-EE-Tallinn", "west": 24.6, "south": 59.35, "east": 24.9, "north": 59.5, "backend": {"eans"}, "min_features": 1},
+    {"id": "bbox-SK-Bratislava", "west": 16.95, "south": 48.05, "east": 17.25, "north": 48.25, "backend": {"nsat"}, "min_features": 1},
+    {"id": "bbox-SI-Ljubljana", "west": 14.4, "south": 45.98, "east": 14.6, "north": 46.15, "backend": {"caasi"}, "min_features": 1},
     # Viewport center is France (Strasbourg) — single country, not multi-provider fan-out.
     {"id": "bbox-DE-FR-Strasbourg", "west": 7.7, "south": 48.52, "east": 7.85, "north": 48.62, "backend": {"geopf"}, "min_features": 1},
 ]
@@ -118,6 +134,10 @@ RESOLVE_CASES = [
     ("Dublin", 53.3498, -6.2603, "IE"),
     ("Cork", 51.8985, -8.4756, "IE"),
     ("Riga", 56.9496, 24.1052, "LV"),
+    ("Vilnius", 54.6872, 25.2797, "LT"),
+    ("Tallinn", 59.437, 24.7536, "EE"),
+    ("Bratislava", 48.1486, 17.1077, "SK"),
+    ("Ljubljana", 46.0569, 14.5058, "SI"),
     ("outside", 60.0, 10.0, None),
 ]
 

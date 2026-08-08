@@ -23,6 +23,9 @@ import {
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_MAP_BBOX_DEG = 3.5;
 const CLAMP_MAP_BBOX_DEG = 2.0;
+/** Small national GeoJSON sets (EE/LT/SK/SI/…) — allow full-country viewport without clamp. */
+const SMALL_NATIONAL_ZONE_CAP = 800;
+const SMALL_NATIONAL_MAX_SPAN_DEG = 12;
 
 export function isTimeout(err: unknown): boolean {
   return (
@@ -99,27 +102,92 @@ export function isZoneActive(zone: UasZoneFeature, now = new Date()): boolean {
 
 /** Extract the first `.json` entry from a (store/deflate) ZIP buffer. */
 export function unzipFirstJson(buf: Buffer): string {
-  let offset = 0;
-  while (offset + 30 <= buf.length) {
-    if (buf.readUInt32LE(offset) !== 0x04034b50) break;
-    const method = buf.readUInt16LE(offset + 8);
-    const compSize = buf.readUInt32LE(offset + 18);
-    const nameLen = buf.readUInt16LE(offset + 26);
-    const extraLen = buf.readUInt16LE(offset + 28);
-    const nameStart = offset + 30;
-    const name = buf.subarray(nameStart, nameStart + nameLen).toString("utf8");
-    const dataStart = nameStart + nameLen + extraLen;
-    const dataEnd = dataStart + compSize;
-    if (dataEnd > buf.length) break;
-    const payload = buf.subarray(dataStart, dataEnd);
-    if (/\.json$/i.test(name) && !name.includes("__MACOSX")) {
-      if (method === 0) return payload.toString("utf8");
-      if (method === 8) return inflateRawSync(payload).toString("utf8");
-      throw new Error(`unsupported zip method ${method} for ${name}`);
-    }
-    offset = dataEnd;
+  return unzipFirstMatching(buf, /\.json$/i);
+}
+
+/**
+ * Locate the start of the ZIP central directory via the End of Central
+ * Directory record. Prefer this over walking local headers: many publishers
+ * (NSAT, CAA SI) set bit 3 / data descriptors so local compressed sizes are 0.
+ */
+function zipCentralDirectoryOffset(buf: Buffer): number {
+  const min = Math.max(0, buf.length - 65_536 - 22);
+  for (let i = buf.length - 22; i >= min; i--) {
+    if (buf.readUInt32LE(i) !== 0x06054b50) continue;
+    return buf.readUInt32LE(i + 16);
   }
-  throw new Error("no .json entry in zip");
+  throw new Error("zip EOCD not found");
+}
+
+type ZipEntry = {
+  name: string;
+  method: number;
+  compSize: number;
+  localHeaderOffset: number;
+};
+
+function* zipCentralEntries(buf: Buffer): Generator<ZipEntry> {
+  let offset = zipCentralDirectoryOffset(buf);
+  while (offset + 46 <= buf.length) {
+    if (buf.readUInt32LE(offset) !== 0x02014b50) break;
+    const method = buf.readUInt16LE(offset + 10);
+    const compSize = buf.readUInt32LE(offset + 20);
+    const nameLen = buf.readUInt16LE(offset + 28);
+    const extraLen = buf.readUInt16LE(offset + 30);
+    const commentLen = buf.readUInt16LE(offset + 32);
+    const localHeaderOffset = buf.readUInt32LE(offset + 42);
+    const name = buf
+      .subarray(offset + 46, offset + 46 + nameLen)
+      .toString("utf8");
+    yield { name, method, compSize, localHeaderOffset };
+    offset += 46 + nameLen + extraLen + commentLen;
+  }
+}
+
+function zipEntryPayload(buf: Buffer, entry: ZipEntry): Buffer {
+  const lh = entry.localHeaderOffset;
+  if (lh + 30 > buf.length || buf.readUInt32LE(lh) !== 0x04034b50) {
+    throw new Error(`invalid local header for ${entry.name}`);
+  }
+  const nameLen = buf.readUInt16LE(lh + 26);
+  const extraLen = buf.readUInt16LE(lh + 28);
+  const dataStart = lh + 30 + nameLen + extraLen;
+  const dataEnd = dataStart + entry.compSize;
+  if (dataEnd > buf.length) {
+    throw new Error(`truncated zip entry ${entry.name}`);
+  }
+  const payload = buf.subarray(dataStart, dataEnd);
+  if (entry.method === 0) return Buffer.from(payload);
+  if (entry.method === 8) return inflateRawSync(payload);
+  throw new Error(`unsupported zip method ${entry.method} for ${entry.name}`);
+}
+
+/** Extract the first entry whose name matches `pattern` from a ZIP buffer. */
+export function unzipFirstMatching(buf: Buffer, pattern: RegExp): string {
+  for (const entry of zipCentralEntries(buf)) {
+    if (!pattern.test(entry.name) || entry.name.includes("__MACOSX")) continue;
+    return zipEntryPayload(buf, entry).toString("utf8");
+  }
+  throw new Error(`no zip entry matching ${pattern}`);
+}
+
+/** Extract first `.kml` from a ZIP or nested KMZ (zip-in-zip). */
+export function unzipFirstKml(buf: Buffer): string {
+  try {
+    return unzipFirstMatching(buf, /\.kml$/i);
+  } catch {
+    // Outer zip may wrap a .kmz (itself a zip).
+    const kmz = unzipFirstMatchingBinary(buf, /\.kmz$/i);
+    return unzipFirstMatching(kmz, /\.kml$/i);
+  }
+}
+
+function unzipFirstMatchingBinary(buf: Buffer, pattern: RegExp): Buffer {
+  for (const entry of zipCentralEntries(buf)) {
+    if (!pattern.test(entry.name) || entry.name.includes("__MACOSX")) continue;
+    return zipEntryPayload(buf, entry);
+  }
+  throw new Error(`no zip entry matching ${pattern}`);
 }
 
 function volumeBbox(
@@ -330,9 +398,27 @@ export function createEd269NationalClient(opts: {
       return out;
     },
     async queryBbox(west, south, east, north, limit = 500) {
-      const clamped = clampMapBbox(west, south, east, north);
-      if (!clamped) return { type: "FeatureCollection", features: [] };
       const zones = await getZones();
+      const spanLng = east - west;
+      const spanLat = north - south;
+      if (spanLng <= 0 || spanLat <= 0) {
+        return { type: "FeatureCollection", features: [] };
+      }
+
+      // Compact national feeds: keep the full viewport so country zoom shows all
+      // geozones (EE/LT were truncated to a 2° clamp and looked nearly empty).
+      let box: { west: number; south: number; east: number; north: number } | null;
+      if (
+        zones.length <= SMALL_NATIONAL_ZONE_CAP &&
+        spanLng <= SMALL_NATIONAL_MAX_SPAN_DEG &&
+        spanLat <= SMALL_NATIONAL_MAX_SPAN_DEG
+      ) {
+        box = { west, south, east, north };
+      } else {
+        box = clampMapBbox(west, south, east, north);
+      }
+      if (!box) return { type: "FeatureCollection", features: [] };
+
       const out: GeoJSON.Feature[] = [];
       const seen = new Set<string>();
       for (const zone of zones) {
@@ -340,10 +426,10 @@ export function createEd269NationalClient(opts: {
         for (const vol of zone.geometry) {
           if (
             !bboxIntersectsVolume(
-              clamped.west,
-              clamped.south,
-              clamped.east,
-              clamped.north,
+              box.west,
+              box.south,
+              box.east,
+              box.north,
               vol,
             )
           ) {

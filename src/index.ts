@@ -10,6 +10,7 @@ import { airspaceRoutes } from "./routes/airspace";
 import { authRoutes } from "./routes/auth";
 import { contactRoutes } from "./routes/contact";
 import { dronesRoutes } from "./routes/drones";
+import { flightsRoutes } from "./routes/flights";
 import { obstaclesRoutes } from "./routes/obstacles";
 import { pilotsRoutes } from "./routes/pilots";
 import { trafficRoutes } from "./routes/traffic";
@@ -54,6 +55,7 @@ app.use(
 app.route("/api/airspace", airspaceRoutes);
 app.route("/api/zones", zonesRoutes);
 app.route("/api/obstacles", obstaclesRoutes);
+app.route("/api/flights", flightsRoutes);
 app.route("/api/auth", authRoutes);
 app.route("/api/account", accountRoutes);
 app.route("/api/contact", contactRoutes);

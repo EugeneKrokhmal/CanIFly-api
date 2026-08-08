@@ -4,8 +4,16 @@ import { ensurePostgisSchema, isDatabaseAvailable } from "../lib/db/client";
 import {
   getPilotProfile,
   listObstaclesByUser,
-  listTopPilotsByPinCount,
 } from "../lib/db/obstacle-queries";
+import { listTopPilotsByLevel } from "../lib/db/pilot-leaderboard";
+import {
+  flightSummaryJson,
+  listFlightsByUser,
+} from "../lib/db/flight-queries";
+import {
+  computePilotBadges,
+  pilotBadgeStats,
+} from "../lib/badges";
 
 export const pilotsRoutes = new Hono();
 
@@ -15,7 +23,7 @@ const topQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).optional().default(20),
 });
 
-/** Top pilots by pins left — must stay before `/:id`. */
+/** Top pilots by aviation rank / airtime — must stay before `/:id`. */
 pilotsRoutes.get("/top", async (c) => {
   try {
     // Decorative: empty list when DB is down (don't 503 the map UI).
@@ -32,7 +40,7 @@ pilotsRoutes.get("/top", async (c) => {
       return c.json({ error: "Invalid query" }, 400);
     }
 
-    const pilots = await listTopPilotsByPinCount(parsed.data.limit);
+    const pilots = await listTopPilotsByLevel(parsed.data.limit);
     return c.json({ pilots });
   } catch (err) {
     console.error("[pilots/GET /top]", err);
@@ -58,7 +66,35 @@ pilotsRoutes.get("/:id", async (c) => {
       return c.json({ error: "Pilot not found" }, 404);
     }
 
-    const obstacles = await listObstaclesByUser(parsed.data);
+    const obstacles = await listObstaclesByUser(parsed.data, 500);
+    const flights = await listFlightsByUser(parsed.data, 100);
+
+    const badgeFlights = flights.map((f) => ({
+      startedAt: f.startedAt,
+      durationS: f.durationS,
+      distanceM: f.distanceM,
+      maxHeightM: f.maxHeightM,
+      hasTrack: Boolean(f.trackCoordinates && f.trackCoordinates.length >= 2),
+    }));
+    const badgePins = obstacles.map((o) => ({
+      kind: o.kind,
+      photoUrl: o.photoUrl,
+      createdAt: o.createdAt,
+    }));
+    const badges = computePilotBadges({
+      pilot: {
+        operatorNumber: pilot.operatorNumber,
+        avatarUrl: pilot.avatarUrl,
+        bio: pilot.bio,
+        createdAt: pilot.createdAt,
+      },
+      flights: badgeFlights,
+      pins: badgePins,
+    });
+    const stats = pilotBadgeStats({
+      flights: badgeFlights,
+      pins: badgePins,
+    });
 
     return c.json({
       pilot: {
@@ -69,6 +105,9 @@ pilotsRoutes.get("/:id", async (c) => {
         avatarUrl: pilot.avatarUrl,
         createdAt: pilot.createdAt,
       },
+      stats,
+      badges,
+      flights: flights.map(flightSummaryJson),
       obstacles: obstacles.map((o) => ({
         id: o.id,
         kind: o.kind,

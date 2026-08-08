@@ -44,6 +44,22 @@ import {
   queryLgsPoint,
 } from "./lgs-client";
 import {
+  queryAnsltBbox,
+  queryAnsltPoint,
+} from "./anslt-client";
+import {
+  queryEansBbox,
+  queryEansPoint,
+} from "./eans-client";
+import {
+  queryNsatBbox,
+  queryNsatPoint,
+} from "./nsat-client";
+import {
+  queryCaasiBbox,
+  queryCaasiPoint,
+} from "./caasi-client";
+import {
   queryPansaBbox,
   queryPansaPoint,
 } from "./pansa-client";
@@ -73,7 +89,11 @@ export type LiveBackendLabel =
   | "austro"
   | "lfv"
   | "iaa"
-  | "lgs";
+  | "lgs"
+  | "anslt"
+  | "eans"
+  | "nsat"
+  | "caasi";
 
 /** Live-only countries (no PostGIS/memory fallback). */
 export const LIVE_ONLY_COUNTRIES = new Set<CountryId>([
@@ -88,6 +108,10 @@ export const LIVE_ONLY_COUNTRIES = new Set<CountryId>([
   "SE",
   "IE",
   "LV",
+  "LT",
+  "EE",
+  "SK",
+  "SI",
 ]);
 
 export function backendLabelForCountry(country: CountryId): LiveBackendLabel {
@@ -102,6 +126,10 @@ export function backendLabelForCountry(country: CountryId): LiveBackendLabel {
   if (country === "SE") return "lfv";
   if (country === "IE") return "iaa";
   if (country === "LV") return "lgs";
+  if (country === "LT") return "anslt";
+  if (country === "EE") return "eans";
+  if (country === "SK") return "nsat";
+  if (country === "SI") return "caasi";
   return "servais";
 }
 
@@ -205,6 +233,46 @@ export const latviaProvider: CountryAirspaceProvider = {
   },
 };
 
+export const lithuaniaProvider: CountryAirspaceProvider = {
+  country: "LT",
+  async queryPoint(lat, lng) {
+    return queryAnsltPoint(lat, lng);
+  },
+  async queryBbox(west, south, east, north, limit = 500) {
+    return queryAnsltBbox(west, south, east, north, limit);
+  },
+};
+
+export const estoniaProvider: CountryAirspaceProvider = {
+  country: "EE",
+  async queryPoint(lat, lng) {
+    return queryEansPoint(lat, lng);
+  },
+  async queryBbox(west, south, east, north, limit = 500) {
+    return queryEansBbox(west, south, east, north, limit);
+  },
+};
+
+export const slovakiaProvider: CountryAirspaceProvider = {
+  country: "SK",
+  async queryPoint(lat, lng) {
+    return queryNsatPoint(lat, lng);
+  },
+  async queryBbox(west, south, east, north, limit = 500) {
+    return queryNsatBbox(west, south, east, north, limit);
+  },
+};
+
+export const sloveniaProvider: CountryAirspaceProvider = {
+  country: "SI",
+  async queryPoint(lat, lng) {
+    return queryCaasiPoint(lat, lng);
+  },
+  async queryBbox(west, south, east, north, limit = 500) {
+    return queryCaasiBbox(west, south, east, north, limit);
+  },
+};
+
 export const czechiaProvider: CountryAirspaceProvider = {
   country: "CZ",
   async queryPoint(lat, lng) {
@@ -238,6 +306,10 @@ export const COUNTRY_PROVIDERS: Record<CountryId, CountryAirspaceProvider> = {
   SE: swedenProvider,
   IE: irelandProvider,
   LV: latviaProvider,
+  LT: lithuaniaProvider,
+  EE: estoniaProvider,
+  SK: slovakiaProvider,
+  SI: sloveniaProvider,
 };
 
 export function getProvider(country: CountryId): CountryAirspaceProvider {

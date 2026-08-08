@@ -319,8 +319,8 @@ export async function handleGoogleAuthCallback(c: Context): Promise<Response> {
     await setAuthCookie(c, { id: row.id, email: row.email });
 
     const successPath = returnTo.includes("?")
-      ? `${returnTo}&auth=google`
-      : `${returnTo}?auth=google`;
+      ? `${returnTo}&auth=google${isNewUser ? "&new=1" : ""}`
+      : `${returnTo}?auth=google${isNewUser ? "&new=1" : ""}`;
     return redirectToApp(c, successPath);
   } catch (err) {
     console.error("[auth/google/callback]", err);

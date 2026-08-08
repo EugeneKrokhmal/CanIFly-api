@@ -327,6 +327,45 @@ async function runPostgisSchemaMigrations(): Promise<void> {
     CREATE UNIQUE INDEX IF NOT EXISTS obstacle_votes_obstacle_user_uidx
       ON obstacle_votes (obstacle_id, user_id);
   `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS flights (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      source text NOT NULL DEFAULT 'dji_fly',
+      source_file_name text,
+      content_hash text NOT NULL,
+      started_at timestamptz NOT NULL,
+      duration_s double precision NOT NULL DEFAULT 0,
+      distance_m double precision NOT NULL DEFAULT 0,
+      max_height_m double precision,
+      max_h_speed_mps double precision,
+      aircraft_name text,
+      aircraft_sn text,
+      app_platform text,
+      app_version text,
+      start_lat double precision,
+      start_lng double precision,
+      track_coordinates jsonb,
+      raw_details jsonb,
+      created_at timestamptz NOT NULL DEFAULT now()
+    );
+  `;
+
+  await sql`
+    CREATE INDEX IF NOT EXISTS flights_user_id_idx ON flights (user_id);
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS flights_started_at_idx ON flights (started_at);
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS flights_start_lat_lng_idx
+      ON flights (start_lat, start_lng);
+  `;
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS flights_user_content_hash_uidx
+      ON flights (user_id, content_hash);
+  `;
 }
 
 const SCHEMA_TIMEOUT_MS = 25_000;
