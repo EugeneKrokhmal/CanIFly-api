@@ -234,12 +234,23 @@ flightsRoutes.post("/upload", async (c) => {
 
     const form = await c.req.formData();
     const files: File[] = [];
-    for (const [key, value] of form.entries()) {
-      if (
-        (key === "file" || key === "files" || key.startsWith("file")) &&
-        value instanceof File
-      ) {
+    for (const [, value] of form.entries()) {
+      // Node/undici may yield File or Blob-with-name for multipart parts.
+      if (value instanceof File) {
         files.push(value);
+        continue;
+      }
+      if (
+        typeof Blob !== "undefined" &&
+        value instanceof Blob &&
+        typeof (value as Blob & { name?: string }).name === "string"
+      ) {
+        const named = value as Blob & { name: string; type: string };
+        files.push(
+          new File([named], named.name || "upload.bin", {
+            type: named.type || "application/octet-stream",
+          }),
+        );
       }
     }
     if (files.length === 0) {
@@ -247,36 +258,47 @@ flightsRoutes.post("/upload", async (c) => {
     }
 
     const records: { name: string; data: Buffer }[] = [];
+    const skipped: { file: string; reason: string }[] = [];
+    const errors: { file: string; error: string }[] = [];
+
     for (const file of files) {
       const buf = Buffer.from(await file.arrayBuffer());
       const name = file.name || "upload.bin";
       if (isZip(buf) || /\.zip$/i.test(name)) {
         const extracted = unzipFlightRecordsViaCentralDir(buf);
         if (extracted.length === 0) {
-          return c.json(
-            {
-              error:
-                "ZIP had no FlightRecord_*.txt files (or used unsupported compression). Upload the .txt files directly.",
-            },
-            400,
-          );
+          errors.push({
+            file: name,
+            error:
+              "ZIP had no FlightRecord_*.txt files (or used unsupported compression). Upload the .txt files directly.",
+          });
+          continue;
         }
         records.push(...extracted);
       } else if (/FlightRecord_.*\.txt$/i.test(name) || /\.txt$/i.test(name)) {
         records.push({ name, data: buf });
+      } else {
+        skipped.push({
+          file: name,
+          reason: "not a FlightRecord .txt or .zip",
+        });
       }
     }
 
     if (records.length === 0) {
       return c.json(
-        { error: "Upload FlightRecord_*.txt files or a FlightRecords zip" },
-        400,
+        {
+          error:
+            "Upload FlightRecord_*.txt files or a FlightRecords zip",
+          skipped,
+          errors,
+          imported: [],
+        },
+        errors.length > 0 ? 400 : 400,
       );
     }
 
     const imported: ReturnType<typeof flightSummaryJson>[] = [];
-    const skipped: { file: string; reason: string }[] = [];
-    const errors: { file: string; error: string }[] = [];
 
     for (const rec of records) {
       try {
