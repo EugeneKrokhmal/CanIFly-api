@@ -63,24 +63,48 @@ async function resolveDjirecordBin(): Promise<string> {
   return "djirecord";
 }
 
-async function runDjirecord(
+/** Python next to djirecord (venv), else plain python3. */
+async function resolveDecodePython(djirecordBin: string): Promise<string> {
+  const dir = dirname(djirecordBin);
+  for (const name of ["python", "python3"]) {
+    const candidate = join(dir, name);
+    if (await pathExists(candidate)) return candidate;
+  }
+  return "python3";
+}
+
+async function resolveDetailsScript(): Promise<string | null> {
+  const candidates = [
+    process.env.DJI_DETAILS_SCRIPT?.trim(),
+    "/opt/dji-decode/bin/canifly-dji-details.py",
+    join(API_ROOT, "scripts/dji_details_json.py"),
+  ].filter(Boolean) as string[];
+  for (const c of candidates) {
+    if (await pathExists(c)) return c;
+  }
+  return null;
+}
+
+function decodeEnv(includeApiKey: boolean): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  // pydjirecord reads DJI_API_KEY from the environment. Frame decrypt via
+  // env crashes on some v13+ logs; details helpers must not inherit it.
+  if (!includeApiKey) {
+    delete env.DJI_API_KEY;
+  }
+  return env;
+}
+
+async function runExec(
   bin: string,
-  filePath: string,
   args: string[],
   opts?: { includeApiKey?: boolean },
 ): Promise<{ ok: true; stdout: string } | { ok: false; error: string }> {
   try {
-    const env = { ...process.env };
-    // pydjirecord reads DJI_API_KEY from the environment. For --json that
-    // triggers encrypted frame decode, which crashes on some v13+ logs.
-    // Details-only JSON needs the key *absent*; geojson passes --api-key.
-    if (!opts?.includeApiKey) {
-      delete env.DJI_API_KEY;
-    }
-    const { stdout, stderr } = await execFileAsync(bin, [filePath, ...args], {
+    const { stdout, stderr } = await execFileAsync(bin, args, {
       maxBuffer: 64 * 1024 * 1024,
       timeout: 120_000,
-      env,
+      env: decodeEnv(Boolean(opts?.includeApiKey)),
     });
     if (!stdout.trim()) {
       return { ok: false, error: stderr.trim() || "empty decoder output" };
@@ -88,11 +112,46 @@ async function runDjirecord(
     return { ok: true, stdout };
   } catch (err) {
     const e = err as { stderr?: string; message?: string };
-    return {
-      ok: false,
-      error: (e.stderr || e.message || String(err)).trim().slice(0, 800),
-    };
+    const raw = (e.stderr || e.message || String(err)).trim();
+    // Prefer the short CLI message; drop long Python tracebacks in the UI.
+    const short =
+      raw
+        .split("\n")
+        .map((l) => l.trim())
+        .find((l) => l.startsWith("dji_details_json failed:")) ||
+      raw
+        .split("\n")
+        .map((l) => l.trim())
+        .filter((l) => l && !l.startsWith("File ") && !l.startsWith("Traceback"))
+        .at(-1) ||
+      raw;
+    return { ok: false, error: short.slice(0, 400) };
   }
+}
+
+async function runDjirecord(
+  bin: string,
+  filePath: string,
+  args: string[],
+  opts?: { includeApiKey?: boolean },
+): Promise<{ ok: true; stdout: string } | { ok: false; error: string }> {
+  return runExec(bin, [filePath, ...args], opts);
+}
+
+/** Safe details JSON (avoids pydjirecord --json _details_only_dict crash). */
+async function runDetailsJson(
+  djirecordBin: string,
+  filePath: string,
+): Promise<{ ok: true; stdout: string } | { ok: false; error: string }> {
+  const script = await resolveDetailsScript();
+  if (!script) {
+    // Last resort: stock CLI (may crash on some logs).
+    return runDjirecord(djirecordBin, filePath, ["--json"], {
+      includeApiKey: false,
+    });
+  }
+  const py = await resolveDecodePython(djirecordBin);
+  return runExec(py, [script, filePath], { includeApiKey: false });
 }
 
 function finiteCoord(
@@ -285,10 +344,8 @@ export async function decodeDjiFlightRecord(
   const tmpPath = join(tmpDir, `${contentHash}.txt`);
   await writeFile(tmpPath, fileBytes);
 
-  // Details without DJI_API_KEY → pydjirecord details-only JSON (no frames).
-  const detailsRes = await runDjirecord(bin, tmpPath, ["--json"], {
-    includeApiKey: false,
-  });
+  // Prefer our helper — stock `djirecord --json` details-only crashes on some logs.
+  const detailsRes = await runDetailsJson(bin, tmpPath);
   if (!detailsRes.ok) {
     throw new Error(
       `DJI decode failed (${detailsRes.error}). Install pydjirecord (Python 3.11+) or set DJI_DECODE_BIN.`,

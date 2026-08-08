@@ -13,12 +13,14 @@ RUN apt-get update \
     g++ \
   && rm -rf /var/lib/apt/lists/*
 
-# DJI FlightRecord decoder (pydjirecord → djirecord CLI)
+# DJI FlightRecord decoder (pydjirecord → djirecord CLI + safe details helper)
 RUN python3 -m venv /opt/dji-decode \
   && /opt/dji-decode/bin/pip install --no-cache-dir --upgrade pip \
   && /opt/dji-decode/bin/pip install --no-cache-dir 'pydjirecord[proto]>=1.3' \
   && /opt/dji-decode/bin/djirecord --help >/dev/null
+COPY scripts/dji_details_json.py /opt/dji-decode/bin/canifly-dji-details.py
 ENV DJI_DECODE_BIN=/opt/dji-decode/bin/djirecord
+ENV DJI_DETAILS_SCRIPT=/opt/dji-decode/bin/canifly-dji-details.py
 
 # Pin middleware commit so Docker cache invalidates when schemas change.
 # Must include pilot/rank (BADGE_HOURS_BONUS). Bump this SHA when shipping shared exports.
