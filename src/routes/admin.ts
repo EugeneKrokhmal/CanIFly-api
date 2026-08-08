@@ -18,6 +18,7 @@ import {
 import { fetchDipulNationalZones } from "../lib/geo/dipul-client";
 import { FIXTURE_ZONES } from "../lib/geo/fixtures";
 import {
+  clearSeedPilots,
   seedPilots,
   seedPilotsPlan,
 } from "../lib/seed/pilots";
@@ -214,6 +215,32 @@ adminRoutes.post("/seed-pilots", async (c) => {
     return c.json(
       {
         error: "Seed failed",
+        message: err instanceof Error ? err.message : "unknown",
+      },
+      500,
+    );
+  }
+});
+
+/** Remove all @seed.canifly.local users and cascaded pins / votes / flights. */
+adminRoutes.post("/clear-seed-pilots", async (c) => {
+  if (!authorize(c)) {
+    return c.json({ error: "Unauthorized" }, 401);
+  }
+
+  try {
+    if (!(await isDatabaseAvailable())) {
+      return c.json({ error: "Database unavailable" }, 503);
+    }
+
+    await ensurePostgisSchema();
+    const result = await clearSeedPilots();
+    return c.json({ ok: true, ...result });
+  } catch (err) {
+    console.error("[admin/clear-seed-pilots]", err);
+    return c.json(
+      {
+        error: "Clear seed failed",
         message: err instanceof Error ? err.message : "unknown",
       },
       500,

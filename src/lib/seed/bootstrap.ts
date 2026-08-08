@@ -1,12 +1,19 @@
 /**
- * Idempotent demo pilot seed — runs once when no @seed.canifly.local users exist.
+ * Idempotent demo pilot seed — only when SEED_DEMO_PILOTS=1.
+ * Off by default so clearing seed users on prod is not undone by redeploys.
  */
 import { ensurePostgisSchema, isDatabaseAvailable } from "../db/client.js";
 import { seedNeedsRefresh, seedPilots } from "./pilots.js";
 
 let seedPromise: Promise<void> | undefined;
 
+function seedDemoPilotsEnabled(): boolean {
+  const v = process.env.SEED_DEMO_PILOTS?.trim().toLowerCase();
+  return v === "1" || v === "true" || v === "yes";
+}
+
 export async function ensureSeedPilotsLoaded(): Promise<void> {
+  if (!seedDemoPilotsEnabled()) return;
   if (seedPromise) return seedPromise;
 
   seedPromise = (async () => {

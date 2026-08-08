@@ -175,14 +175,48 @@ export type SeedPilotsResult = {
 
 async function removeExistingSeedUsers(db: ReturnType<typeof getDb>["db"]) {
   const existing = await db
-    .select({ id: users.id })
+    .select({ id: users.id, email: users.email })
     .from(users)
     .where(like(users.email, `%${SEED_EMAIL_SUFFIX}`));
-  if (existing.length === 0) return 0;
+  if (existing.length === 0) return { removed: 0, emails: [] as string[] };
   for (const row of existing) {
+    // Cascades pins, votes, flights, messages.
     await db.delete(users).where(eq(users.id, row.id));
   }
-  return existing.length;
+  return {
+    removed: existing.length,
+    emails: existing.map((u) => u.email),
+  };
+}
+
+/** Delete all @seed.canifly.local users (and cascaded pins / votes / flights). */
+export async function clearSeedPilots(): Promise<{
+  removed: number;
+  emails: string[];
+  pinCount: number;
+}> {
+  const { db } = getDb();
+  const existing = await db
+    .select({ id: users.id, email: users.email })
+    .from(users)
+    .where(like(users.email, `%${SEED_EMAIL_SUFFIX}`));
+
+  if (existing.length === 0) {
+    return { removed: 0, emails: [], pinCount: 0 };
+  }
+
+  const ids = existing.map((u) => u.id);
+  const pinRows = await db
+    .select({ id: obstacles.id })
+    .from(obstacles)
+    .where(inArray(obstacles.userId, ids));
+
+  const result = await removeExistingSeedUsers(db);
+  return {
+    removed: result.removed,
+    emails: result.emails,
+    pinCount: pinRows.length,
+  };
 }
 
 export function seedPilotsPlan() {
@@ -238,7 +272,8 @@ export async function seedPilots(options: {
 
   let removed = 0;
   if (force && existing.length > 0) {
-    removed = await removeExistingSeedUsers(db);
+    const cleared = await removeExistingSeedUsers(db);
+    removed = cleared.removed;
   }
 
   const passwordHash = await hashPassword(SEED_PASSWORD);
