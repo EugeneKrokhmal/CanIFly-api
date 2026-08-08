@@ -14,4 +14,4 @@ export {
   type PilotRankId,
   type PilotRankStats,
   type RankInsignia,
-} from "@canifly/middleware";
+} from "@canifly/middleware/pilot/rank";
