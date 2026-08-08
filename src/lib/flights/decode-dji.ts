@@ -73,8 +73,12 @@ async function resolveDecodePython(djirecordBin: string): Promise<string> {
   return "python3";
 }
 
-async function resolveDetailsScript(): Promise<string | null> {
+async function resolveDecodeScript(): Promise<string | null> {
   const candidates = [
+    process.env.DJI_DECODE_SCRIPT?.trim(),
+    "/opt/dji-decode/bin/canifly-dji-decode.py",
+    join(API_ROOT, "scripts/dji_decode_flight.py"),
+    // Older deploys may only have the details helper.
     process.env.DJI_DETAILS_SCRIPT?.trim(),
     "/opt/dji-decode/bin/canifly-dji-details.py",
     join(API_ROOT, "scripts/dji_details_json.py"),
@@ -87,8 +91,8 @@ async function resolveDetailsScript(): Promise<string | null> {
 
 function decodeEnv(includeApiKey: boolean): NodeJS.ProcessEnv {
   const env = { ...process.env };
-  // pydjirecord reads DJI_API_KEY from the environment. Frame decrypt via
-  // env crashes on some v13+ logs; details helpers must not inherit it.
+  // pydjirecord CLI reads DJI_API_KEY from the environment. Our helper takes
+  // --api-key explicitly; strip env so stock fallbacks stay details-safe.
   if (!includeApiKey) {
     delete env.DJI_API_KEY;
   }
@@ -103,7 +107,7 @@ async function runExec(
   try {
     const { stdout, stderr } = await execFileAsync(bin, args, {
       maxBuffer: 64 * 1024 * 1024,
-      timeout: 120_000,
+      timeout: 180_000,
       env: decodeEnv(Boolean(opts?.includeApiKey)),
     });
     if (!stdout.trim()) {
@@ -113,12 +117,15 @@ async function runExec(
   } catch (err) {
     const e = err as { stderr?: string; message?: string };
     const raw = (e.stderr || e.message || String(err)).trim();
-    // Prefer the short CLI message; drop long Python tracebacks in the UI.
     const short =
       raw
         .split("\n")
         .map((l) => l.trim())
-        .find((l) => l.startsWith("dji_details_json failed:")) ||
+        .find(
+          (l) =>
+            l.startsWith("dji_decode_flight failed:") ||
+            l.startsWith("dji_details_json failed:"),
+        ) ||
       raw
         .split("\n")
         .map((l) => l.trim())
@@ -138,20 +145,54 @@ async function runDjirecord(
   return runExec(bin, [filePath, ...args], opts);
 }
 
-/** Safe details JSON (avoids pydjirecord --json _details_only_dict crash). */
-async function runDetailsJson(
+type DecoderPayload = {
+  version?: number;
+  details?: Record<string, unknown>;
+  frames?: unknown;
+  trackCoordinates?: number[][] | null;
+  trackSource?: string | null;
+  trackError?: string | null;
+};
+
+/** Unified helper: details + optional GPS track (OSD fallback if frames crash). */
+async function runFlightDecode(
   djirecordBin: string,
   filePath: string,
-): Promise<{ ok: true; stdout: string } | { ok: false; error: string }> {
-  const script = await resolveDetailsScript();
+  apiKey: string,
+): Promise<{ ok: true; payload: DecoderPayload } | { ok: false; error: string }> {
+  const script = await resolveDecodeScript();
   if (!script) {
-    // Last resort: stock CLI (may crash on some logs).
-    return runDjirecord(djirecordBin, filePath, ["--json"], {
+    const detailsRes = await runDjirecord(djirecordBin, filePath, ["--json"], {
       includeApiKey: false,
     });
+    if (!detailsRes.ok) return detailsRes;
+    try {
+      return {
+        ok: true,
+        payload: JSON.parse(detailsRes.stdout) as DecoderPayload,
+      };
+    } catch {
+      return { ok: false, error: "invalid decoder JSON" };
+    }
   }
+
   const py = await resolveDecodePython(djirecordBin);
-  return runExec(py, [script, filePath], { includeApiKey: false });
+  const args = [script, filePath];
+  // Full decoder accepts --api-key; legacy details script ignores unknown args
+  // only if it uses argparse — our details script doesn't. Detect by name.
+  const isFull =
+    script.includes("dji_decode_flight") || script.includes("canifly-dji-decode");
+  if (isFull && apiKey) {
+    args.push("--api-key", apiKey);
+  }
+
+  const res = await runExec(py, args, { includeApiKey: false });
+  if (!res.ok) return res;
+  try {
+    return { ok: true, payload: JSON.parse(res.stdout) as DecoderPayload };
+  } catch {
+    return { ok: false, error: "invalid decoder JSON" };
+  }
 }
 
 function finiteCoord(
@@ -344,19 +385,14 @@ export async function decodeDjiFlightRecord(
   const tmpPath = join(tmpDir, `${contentHash}.txt`);
   await writeFile(tmpPath, fileBytes);
 
-  // Prefer our helper — stock `djirecord --json` details-only crashes on some logs.
-  const detailsRes = await runDetailsJson(bin, tmpPath);
-  if (!detailsRes.ok) {
+  const decoded = await runFlightDecode(bin, tmpPath, apiKey);
+  if (!decoded.ok) {
     throw new Error(
-      `DJI decode failed (${detailsRes.error}). Install pydjirecord (Python 3.11+) or set DJI_DECODE_BIN.`,
+      `DJI decode failed (${decoded.error}). Install pydjirecord (Python 3.11+) or set DJI_DECODE_BIN.`,
     );
   }
 
-  const payload = JSON.parse(detailsRes.stdout) as {
-    version?: number;
-    details?: Record<string, unknown>;
-    frames?: unknown;
-  };
+  const payload = decoded.payload;
   const details = { ...(payload.details ?? {}) };
   const fromDetails = pickDetails(details);
   const lastOsd = lastFrameOsd(payload.frames);
@@ -366,8 +402,23 @@ export async function decodeDjiFlightRecord(
 
   let trackCoordinates: number[][] | null = null;
   let trackDecrypted = false;
-  if (apiKey) {
-    // Tracks need decryption; failures are non-fatal (metadata still syncs).
+
+  if (
+    Array.isArray(payload.trackCoordinates) &&
+    payload.trackCoordinates.length >= 2
+  ) {
+    trackCoordinates = payload.trackCoordinates.filter(
+      (c) =>
+        Array.isArray(c) &&
+        typeof c[0] === "number" &&
+        typeof c[1] === "number" &&
+        Number.isFinite(c[0]) &&
+        Number.isFinite(c[1]),
+    );
+    if (trackCoordinates.length < 2) trackCoordinates = null;
+    trackDecrypted = Boolean(trackCoordinates);
+  } else if (apiKey) {
+    // Legacy path if only the details script is deployed.
     const geoRes = await runDjirecord(
       bin,
       tmpPath,
@@ -386,6 +437,12 @@ export async function decodeDjiFlightRecord(
         `[dji] geojson decode skipped for ${sourceFileName}: ${geoRes.error.slice(0, 200)}`,
       );
     }
+  }
+
+  if (payload.trackError) {
+    console.warn(
+      `[dji] track for ${sourceFileName}: ${payload.trackError} (source=${payload.trackSource ?? "none"})`,
+    );
   }
 
   // Prefer details → last OSD → haversine(track)
@@ -449,6 +506,8 @@ export async function decodeDjiFlightRecord(
     rawDetails: {
       ...details,
       _lastOsd: lastOsd ?? undefined,
+      _trackSource: payload.trackSource ?? undefined,
+      _trackError: payload.trackError ?? undefined,
     },
     trackDecrypted,
   };
