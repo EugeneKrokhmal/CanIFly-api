@@ -64,6 +64,8 @@ export const users = pgTable("users", {
   marketingOptIn: boolean("marketing_opt_in").notNull().default(false),
   marketingOptInAt: timestamp("marketing_opt_in_at", { withTimezone: true }),
   termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }),
+  /** Last aviation rank the user was notified about (null = not baselined yet). */
+  lastNotifiedRankId: text("last_notified_rank_id"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -71,6 +73,34 @@ export const users = pgTable("users", {
 
 export type UserRow = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
+
+/** Server inbox — e.g. rank-up congratulations. */
+export const userMessages = pgTable(
+  "user_messages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull().default("rank_up"),
+    rankId: text("rank_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    readAt: timestamp("read_at", { withTimezone: true }),
+  },
+  (table) => [
+    index("user_messages_user_id_idx").on(table.userId),
+    uniqueIndex("user_messages_user_kind_rank_uidx").on(
+      table.userId,
+      table.kind,
+      table.rankId,
+    ),
+  ],
+);
+
+export type UserMessageRow = typeof userMessages.$inferSelect;
+export type NewUserMessage = typeof userMessages.$inferInsert;
 
 export const obstacles = pgTable(
   "obstacles",

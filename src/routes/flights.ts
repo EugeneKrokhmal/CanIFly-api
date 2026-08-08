@@ -15,6 +15,7 @@ import {
 } from "../lib/db/flight-queries";
 import { flights } from "../lib/db/schema";
 import { decodeDjiFlightRecord } from "../lib/flights/decode-dji";
+import { syncRankInbox } from "../lib/db/rank-inbox";
 
 export const flightsRoutes = new Hono();
 
@@ -343,6 +344,14 @@ flightsRoutes.post("/upload", async (c) => {
           file: rec.name,
           error: err instanceof Error ? err.message : String(err),
         });
+      }
+    }
+
+    if (imported.length > 0) {
+      try {
+        await syncRankInbox(auth.id);
+      } catch (err) {
+        console.error("[flights/upload] rank inbox sync", err);
       }
     }
 

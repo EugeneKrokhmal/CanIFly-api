@@ -246,6 +246,10 @@ async function runPostgisSchemaMigrations(): Promise<void> {
   `;
   await sql`
     ALTER TABLE users
+      ADD COLUMN IF NOT EXISTS last_notified_rank_id text;
+  `;
+  await sql`
+    ALTER TABLE users
       ALTER COLUMN password_hash DROP NOT NULL;
   `;
   await sql`
@@ -365,6 +369,25 @@ async function runPostgisSchemaMigrations(): Promise<void> {
   await sql`
     CREATE UNIQUE INDEX IF NOT EXISTS flights_user_content_hash_uidx
       ON flights (user_id, content_hash);
+  `;
+
+  await sql`
+    CREATE TABLE IF NOT EXISTS user_messages (
+      id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id uuid NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind text NOT NULL DEFAULT 'rank_up',
+      rank_id text NOT NULL,
+      created_at timestamptz NOT NULL DEFAULT now(),
+      read_at timestamptz
+    );
+  `;
+  await sql`
+    CREATE INDEX IF NOT EXISTS user_messages_user_id_idx
+      ON user_messages (user_id);
+  `;
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS user_messages_user_kind_rank_uidx
+      ON user_messages (user_id, kind, rank_id);
   `;
 }
 

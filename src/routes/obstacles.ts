@@ -17,6 +17,7 @@ import {
   setObstacleVote,
 } from "../lib/db/obstacle-queries";
 import { deleteObstaclePhoto, saveObstaclePhoto } from "../lib/obstacles/photo";
+import { syncRankInbox } from "../lib/db/rank-inbox";
 
 export const obstaclesRoutes = new Hono();
 
@@ -162,6 +163,12 @@ obstaclesRoutes.post("/", async (c) => {
 
     if (!row) {
       return c.json({ error: "Failed to save obstacle" }, 500);
+    }
+
+    try {
+      await syncRankInbox(auth.id);
+    } catch (err) {
+      console.error("[obstacles/POST] rank inbox sync", err);
     }
 
     return c.json({
