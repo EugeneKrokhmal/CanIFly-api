@@ -36,12 +36,24 @@ app.use(
 
 app.get("/health", async (c) => {
   const db = await isDatabaseAvailable();
+  const decodeBin =
+    process.env.DJI_DECODE_BIN?.trim() || "/opt/dji-decode/bin/djirecord";
+  let djiDecoder = false;
+  try {
+    const { access } = await import("node:fs/promises");
+    await access(decodeBin);
+    djiDecoder = true;
+  } catch {
+    djiDecoder = false;
+  }
   return c.json({
     ok: true,
     service: "canifly-api",
     database: db ? "up" : "down",
     /** Whether Poland PANSA live queries can run (key present; not validated). */
     pansaConfigured: Boolean(process.env.PANSA_API_KEY?.trim()),
+    djiApiKeyConfigured: Boolean(process.env.DJI_API_KEY?.trim()),
+    djiDecoder,
     memory: memoryHealth(),
   });
 });

@@ -16,7 +16,7 @@ RUN apt-get update \
 # DJI FlightRecord decoder (pydjirecord → djirecord CLI)
 RUN python3 -m venv /opt/dji-decode \
   && /opt/dji-decode/bin/pip install --no-cache-dir --upgrade pip \
-  && /opt/dji-decode/bin/pip install --no-cache-dir 'pydjirecord>=1.2' \
+  && /opt/dji-decode/bin/pip install --no-cache-dir 'pydjirecord[proto]>=1.3' \
   && /opt/dji-decode/bin/djirecord --help >/dev/null
 ENV DJI_DECODE_BIN=/opt/dji-decode/bin/djirecord
 

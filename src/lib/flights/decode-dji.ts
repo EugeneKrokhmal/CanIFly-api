@@ -67,12 +67,20 @@ async function runDjirecord(
   bin: string,
   filePath: string,
   args: string[],
+  opts?: { includeApiKey?: boolean },
 ): Promise<{ ok: true; stdout: string } | { ok: false; error: string }> {
   try {
+    const env = { ...process.env };
+    // pydjirecord reads DJI_API_KEY from the environment. For --json that
+    // triggers encrypted frame decode, which crashes on some v13+ logs.
+    // Details-only JSON needs the key *absent*; geojson passes --api-key.
+    if (!opts?.includeApiKey) {
+      delete env.DJI_API_KEY;
+    }
     const { stdout, stderr } = await execFileAsync(bin, [filePath, ...args], {
       maxBuffer: 64 * 1024 * 1024,
       timeout: 120_000,
-      env: { ...process.env },
+      env,
     });
     if (!stdout.trim()) {
       return { ok: false, error: stderr.trim() || "empty decoder output" };
@@ -82,7 +90,7 @@ async function runDjirecord(
     const e = err as { stderr?: string; message?: string };
     return {
       ok: false,
-      error: (e.stderr || e.message || String(err)).trim().slice(0, 500),
+      error: (e.stderr || e.message || String(err)).trim().slice(0, 800),
     };
   }
 }
@@ -271,12 +279,16 @@ export async function decodeDjiFlightRecord(
   const bin = await resolveDjirecordBin();
   const apiKey = process.env.DJI_API_KEY?.trim() || "";
 
-  const tmpDir = join(API_ROOT, ".tmp-dji-uploads");
+  // Prefer /tmp — app dir can be non-writable on some hosts.
+  const tmpDir = join("/tmp", "canifly-dji-uploads");
   await mkdir(tmpDir, { recursive: true });
   const tmpPath = join(tmpDir, `${contentHash}.txt`);
   await writeFile(tmpPath, fileBytes);
 
-  const detailsRes = await runDjirecord(bin, tmpPath, ["--json"]);
+  // Details without DJI_API_KEY → pydjirecord details-only JSON (no frames).
+  const detailsRes = await runDjirecord(bin, tmpPath, ["--json"], {
+    includeApiKey: false,
+  });
   if (!detailsRes.ok) {
     throw new Error(
       `DJI decode failed (${detailsRes.error}). Install pydjirecord (Python 3.11+) or set DJI_DECODE_BIN.`,
@@ -298,11 +310,13 @@ export async function decodeDjiFlightRecord(
   let trackCoordinates: number[][] | null = null;
   let trackDecrypted = false;
   if (apiKey) {
-    const geoRes = await runDjirecord(bin, tmpPath, [
-      "--geojson",
-      "--api-key",
-      apiKey,
-    ]);
+    // Tracks need decryption; failures are non-fatal (metadata still syncs).
+    const geoRes = await runDjirecord(
+      bin,
+      tmpPath,
+      ["--geojson", "--api-key", apiKey],
+      { includeApiKey: true },
+    );
     if (geoRes.ok) {
       try {
         trackCoordinates = trackFromGeoJson(JSON.parse(geoRes.stdout));
@@ -310,6 +324,10 @@ export async function decodeDjiFlightRecord(
       } catch {
         // metadata-only
       }
+    } else {
+      console.warn(
+        `[dji] geojson decode skipped for ${sourceFileName}: ${geoRes.error.slice(0, 200)}`,
+      );
     }
   }
 
